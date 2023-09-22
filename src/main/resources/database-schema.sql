@@ -19,7 +19,7 @@ CREATE TABLE ParticipantTeam(
 
 CREATE VIEW ParticipantTeamView AS
 SELECT L.user_id AS leader_user_id,
-       F.user_id AS follower_user_id,
+       F.id AS follower_id,
        F.display_name AS follower_display_name,
        F.age AS follower_age
 FROM Participant L JOIN ParticipantTeam PT on L.id = PT.leader_id JOIN Participant F ON PT.follower_id = F.id;

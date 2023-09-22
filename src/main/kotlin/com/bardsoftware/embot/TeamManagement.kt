@@ -113,6 +113,14 @@ fun ParticipantRecord.teamMemberDialog(tg: ChainBuilder) {
 
 }
 
+fun ParticipantRecord.teamMembers(): List<ParticipantRecord> =
+  db {
+    selectFrom(PARTICIPANTTEAMVIEW).where(PARTICIPANTTEAMVIEW.LEADER_USER_ID.eq(this@teamMembers.userId)).map {
+      ParticipantRecord(id = it.followerId, age = it.followerAge, displayName = it.followerDisplayName)
+    }
+  }
+
+
 fun createCancelAddDialogCallback() = OBJECT_MAPPER.createObjectNode().also {
   it.put(CB_SECTION, CbSection.TEAM.id).put(CB_COMMAND, CbTeamCommand.RESET.id)
 }.toString()

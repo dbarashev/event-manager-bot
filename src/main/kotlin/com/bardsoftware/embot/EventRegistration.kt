@@ -21,9 +21,9 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       return@onCallback
     }
 
-    val command = node["c"]?.asInt() ?: return@onCallback
+    val command = node["c"]?.asInt()?.let { CbEventCommand.entries[it] } ?: CbEventCommand.LIST
     when(command) {
-      0 -> {
+      CbEventCommand.LIST -> {
         val btns = if (event.id in getAvailableEvents(participant).map { it.id }) {
           listOf(BtnData("Зарегистрироваться",
             node.put(CB_COMMAND, CbEventCommand.REGISTER.id).toString()
@@ -39,11 +39,27 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
               | *Дата*\: ${event.start.toString().escapeMarkdown()}
             """.trimMargin(), isMarkdown = true, buttons = btns)
       }
-      1 -> {
-        event.register(participant)
-        tg.reply("Вы зарегистрированы!", buttons = participant.getEventButtons(node), maxCols = 1)
+      CbEventCommand.REGISTER -> {
+        node["id"]?.asInt()?.let(::findParticipant)?.let {otherParticipant ->
+          event.register(otherParticipant)
+          tg.reply("Зарегистрировали: ${otherParticipant.displayName}")
+          return@onCallback
+        }
+        participant.teamMembers().let {
+          if (it.isEmpty()) {
+            event.register(participant)
+            tg.reply("Вы зарегистрированы!", buttons = participant.getEventButtons(node), maxCols = 1)
+          } else {
+            tg.reply("Кого вы будете регистрировать?", buttons =
+              listOf(BtnData("Себя", node.put("id", participant.id).toString())) +
+              it.map { member ->
+                BtnData("${member.displayName}, ${member.age}", node.put("id", member.id).toString())
+              }
+            )
+          }
+        }
       }
-      2 -> {
+      CbEventCommand.UNREGISTER -> {
         event.unregister(participant)
         tg.reply("Регистрация отменена", buttons = participant.getEventButtons(node), maxCols = 1)
       }

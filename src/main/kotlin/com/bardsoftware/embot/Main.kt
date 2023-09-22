@@ -65,4 +65,9 @@ fun getOrCreateParticipant(tgUserId: Long, tgUsername: String): ParticipantRecor
       ?: throw RuntimeException("Failed to fetch or add participant")
   }
 
+fun findParticipant(id: Int): ParticipantRecord? = db {
+  selectFrom(PARTICIPANT).where(PARTICIPANT.ID.eq(id)).fetchOne()
+}
+
+
 
