@@ -1,0 +1,93 @@
+package com.bardsoftware.embot
+
+import org.slf4j.LoggerFactory
+import org.telegram.telegrambots.bots.DefaultBotOptions
+import org.telegram.telegrambots.bots.TelegramLongPollingBot
+import org.telegram.telegrambots.bots.TelegramWebhookBot
+import org.telegram.telegrambots.meta.ApiConstants
+import org.telegram.telegrambots.meta.api.methods.BotApiMethod
+import org.telegram.telegrambots.meta.api.methods.ForwardMessage
+import org.telegram.telegrambots.meta.api.methods.send.SendDocument
+import org.telegram.telegrambots.meta.api.methods.send.SendMessage
+import org.telegram.telegrambots.meta.api.objects.Message
+import org.telegram.telegrambots.meta.api.objects.Update
+import java.io.Serializable
+
+typealias MessageProcessor = (update: Update, sender: MessageSender) -> Unit
+
+class LongPollingConnector(private val processor: MessageProcessor) :
+  TelegramLongPollingBot(createBotOptions(), System.getenv("TG_BOT_TOKEN") ?: ""),
+  MessageSender {
+  init {
+    println("Started SQooL 2023 under name $botUsername")
+    setMessageSender(this)
+  }
+  override fun getBotUsername() = System.getenv("TG_BOT_USERNAME") ?: "sqool_bot"
+  override fun <T : BotApiMethod<Serializable>> send(msg: T) {
+    execute(msg)
+  }
+
+  override fun sendDoc(doc: SendDocument) {
+    execute(doc)
+  }
+
+  override fun forward(msg: Message, toChat: String) {
+    execute(ForwardMessage().also {
+      it.chatId = toChat
+      it.fromChatId = msg.chatId.toString()
+      it.messageId = msg.messageId
+    })
+  }
+
+  override fun onUpdateReceived(update: Update) {
+    processor(update, this)
+  }
+}
+
+class WebHookConnector(private val processor: MessageProcessor) :
+  TelegramWebhookBot(System.getenv("TG_BOT_TOKEN") ?: ""),
+  MessageSender {
+  override fun getBotUsername() = System.getenv("TG_BOT_USERNAME") ?: ""
+  override fun getBotPath(): String = System.getenv("TG_BOT_PATH") ?: ""
+
+  init {
+    println("Started SQooL 2022 under name $botUsername")
+    setMessageSender(this)
+  }
+
+  override fun onWebhookUpdateReceived(update: Update): BotApiMethod<*>? {
+    return try {
+      LOGGER.info("Received update: $update")
+      processor(update, this)
+      null
+    } catch (ex: Exception) {
+      LOGGER.error("Failed to process update", ex)
+      SendMessage().apply {
+        chatId = update.message?.chatId?.toString() ?: ""
+        text = "ERROR"
+
+      }
+    }
+  }
+
+  override fun <T : BotApiMethod<Serializable>> send(msg: T) {
+    execute(msg)
+  }
+
+  override fun sendDoc(doc: SendDocument) {
+    execute(doc)
+  }
+
+  override fun forward(msg: Message, toChat: String) {
+    execute(ForwardMessage().also {
+      it.chatId = toChat
+      it.fromChatId = msg.chatId.toString()
+      it.messageId = msg.messageId
+    })
+  }
+}
+
+private fun createBotOptions() = DefaultBotOptions().apply {
+  baseUrl = System.getenv("TG_BASE_URL") ?: ApiConstants.BASE_URL
+}
+private val LOGGER = LoggerFactory.getLogger("Bot")
