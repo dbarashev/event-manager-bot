@@ -5,6 +5,7 @@ import com.bardsoftware.embot.db.tables.records.EventviewRecord
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.EVENT
 import com.bardsoftware.embot.db.tables.references.EVENTREGISTRATION
+import com.bardsoftware.embot.db.tables.references.EVENTTEAMREGISTRATIONVIEW
 import com.bardsoftware.embot.db.tables.references.EVENTVIEW
 import com.fasterxml.jackson.databind.node.ObjectNode
 
@@ -24,21 +25,33 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
     val command = node["c"]?.asInt()?.let { CbEventCommand.entries[it] } ?: CbEventCommand.LIST
     when(command) {
       CbEventCommand.LIST -> {
-        val btns = if (event.id in getAvailableEvents(participant).map { it.id }) {
-          listOf(BtnData("Зарегистрироваться",
-            node.put(CB_COMMAND, CbEventCommand.REGISTER.id).toString()
-          ))
-        } else listOf(BtnData("Отменить регистрацию",
-          node.put(CB_COMMAND, CbEventCommand.UNREGISTER.id).toString())
-        )
+        val registeredTeam = db {
+          selectFrom(EVENTTEAMREGISTRATIONVIEW).where(
+            EVENTTEAMREGISTRATIONVIEW.LEADER_ID.eq(participant.id)
+              .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(event.id))
+          ).toList()
+        }
+        val registeredLabel =
+          if (registeredTeam.isEmpty()) "из вашей команды пока никто"
+          else registeredTeam.map { it.participantName }.joinToString(separator = ", ")
+        val btns =
+          listOf(
+            BtnData("Зарегистрироваться", node.put(CB_COMMAND, CbEventCommand.REGISTER.id).toString())
+          ) + if (registeredTeam.isNotEmpty()) { listOf(
+            BtnData("Отменить регистрацию полностью", node.put(CB_COMMAND, CbEventCommand.UNREGISTER.id).toString())
+          )} else {
+            emptyList()
+          }
         tg.reply(
           """*${event.title!!.escapeMarkdown()}*
               |${event.seriesTitle?.escapeMarkdown() ?: ""}
               | ${"\\-".repeat(20)}
               | *Организаторы*\: ${event.organizerTitle?.escapeMarkdown() ?: ""}
               | *Дата*\: ${event.start.toString().escapeMarkdown()}
+              | *Зарегистрированы*\: ${registeredLabel.escapeMarkdown()}
             """.trimMargin(), isMarkdown = true, buttons = btns)
       }
+
       CbEventCommand.REGISTER -> {
         node["id"]?.asInt()?.let(::findParticipant)?.let {otherParticipant ->
           event.register(otherParticipant)
@@ -60,7 +73,15 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
         }
       }
       CbEventCommand.UNREGISTER -> {
-        event.unregister(participant)
+        db {
+          deleteFrom(EVENTREGISTRATION).where(EVENTREGISTRATION.PARTICIPANT_ID.`in`(
+            select(EVENTTEAMREGISTRATIONVIEW.PARTICIPANT_ID)
+              .from(EVENTTEAMREGISTRATIONVIEW)
+              .where(EVENTTEAMREGISTRATIONVIEW.LEADER_ID.eq(participant.id)
+                .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(event.id))
+              )
+          )).execute()
+        }
         tg.reply("Регистрация отменена", buttons = participant.getEventButtons(node), maxCols = 1)
       }
     }
@@ -71,43 +92,22 @@ fun getEvent(id: Int): EventviewRecord? =
   db {
     selectFrom(EVENTVIEW).where(EVENTVIEW.ID.eq(id)).fetchOne()
   }
-fun getRegisteredEvents(participant: ParticipantRecord): List<EventRecord> =
-  db {
-    selectFrom(EVENT).where(
-      EVENT.ID.`in`(
-      select(EVENTREGISTRATION.EVENT_ID)
-        .from(EVENTREGISTRATION)
-        .where(EVENTREGISTRATION.PARTICIPANT_ID.eq(participant.id!!)))
-    ).toList()
-  }
 fun getAvailableEvents(participant: ParticipantRecord): List<EventRecord> =
   db {
-    selectFrom(EVENT).where(
-      EVENT.ID.notIn(
-      select(EVENTREGISTRATION.EVENT_ID)
-        .from(EVENTREGISTRATION)
-        .where(EVENTREGISTRATION.PARTICIPANT_ID.eq(participant.id!!)))
-    ).toList()
+    selectFrom(EVENT).toList()
   }
 
 fun ParticipantRecord.getEventButtons(srcNode: ObjectNode) =
-  (getRegisteredEvents(this).map {
-    BtnData(it.formatCheckedLabel(),
-      srcNode.put(CB_EVENT, it.id)
-        .put(CB_COMMAND, CbEventCommand.LIST.id)
-        .toString()
-    )
-  } + getAvailableEvents(this).map {
+  getAvailableEvents(this).map {
     BtnData(it.formatUncheckedLabel(),
       srcNode.put(CB_EVENT, it.id)
         .put(CB_COMMAND, CbEventCommand.LIST.id)
         .toString()
     )
 
-  }).toList()
+  }.toList()
 
-fun EventRecord.formatCheckedLabel() = """✔ ${this.title} / ${this.start}"""
-fun EventRecord.formatUncheckedLabel() = """☐ ${this.title} / ${this.start}"""
+fun EventRecord.formatUncheckedLabel() = """${this.title} / ${this.start}"""
 
 fun EventviewRecord.register(participant: ParticipantRecord) = db {
   insertInto(EVENTREGISTRATION).columns(EVENTREGISTRATION.PARTICIPANT_ID, EVENTREGISTRATION.EVENT_ID)

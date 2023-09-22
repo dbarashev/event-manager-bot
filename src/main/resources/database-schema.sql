@@ -65,5 +65,12 @@ FROM Event E LEFT JOIN (
     FROM EventSeries ES JOIN Organizer O on ES.organizer_id = O.id
 ) AS T ON E.series_id = T.series_id;
 
+CREATE VIEW EventTeamRegistrationView AS
+SELECT EV.*, P.id AS participant_id,
+       P.display_name AS participant_name,
+       CASE WHEN PT.leader_id IS NULL THEN P.id ELSE PT.leader_id END AS leader_id
+FROM EventView EV JOIN EventRegistration ER ON EV.id = ER.event_id
+JOIN Participant P on ER.participant_id = P.id
+LEFT JOIN ParticipantTeam PT ON P.id = PT.follower_id;
 
 create table DialogState(tg_id bigint primary key, state_id int, data text);
