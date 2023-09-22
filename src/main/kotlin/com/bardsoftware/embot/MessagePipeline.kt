@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
-import org.jooq.impl.DSL.field
+import org.jooq.impl.DSL.*
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument
@@ -147,6 +147,15 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
       }
     }
   }
+
+  fun onInput(whenState: Int, code: MessageHandler) {
+    this.handlers += {msg ->
+      if (this.dialogState?.state == whenState) {
+        code(msg)
+      }
+    }
+  }
+
   fun onRegexp(pattern: String, options: Set<RegexOption> = setOf(RegexOption.MULTILINE), whenState: Int? = null,
                messageSource: MessageSource = MessageSource.DIRECT, code: MatchHandler) {
     if (messageSource == MessageSource.DIRECT && update.message?.chatId != update.message?.from?.id) {
@@ -369,6 +378,12 @@ fun User.getDialogState(): DialogState? {
         .firstOrNull()?.let {
           if (it.component1() == null) null else DialogState(it.component1(), it.component2())
         }
+  }
+}
+
+fun User.resetDialog() {
+  db {
+    deleteFrom(table("DialogState")).where(field("tg_id").eq(this@resetDialog.id)).execute()
   }
 }
 
