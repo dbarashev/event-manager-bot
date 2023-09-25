@@ -29,10 +29,8 @@ fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
       CbTeamCommand.LANDING -> {
         db {
           val list = selectFrom(PARTICIPANTTEAMVIEW).where(PARTICIPANTTEAMVIEW.LEADER_USER_ID.eq(tg.userId)).map {
-            """${it.followerDisplayName!!.escapeMarkdown()}, ${it.followerAge}
-              |
-            """.trimMargin()
-          }
+            """${it.followerDisplayName!!.escapeMarkdown()}, ${it.followerAge}"""
+          }.joinToString(separator = "\n")
           tg.reply("""*Ваша команда*\:
             |${"\\-".repeat(20)}
             |$list
