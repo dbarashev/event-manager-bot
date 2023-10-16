@@ -14,10 +14,12 @@ group = "net.barashev.embot"
 version = "1.0-SNAPSHOT"
 
 repositories {
+    mavenLocal()
     mavenCentral()
 }
 
 dependencies {
+    implementation("com.bardsoftware:libbotanique:1.+")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.7.3")
     implementation("com.github.ajalt.clikt:clikt:4.2.0")
     implementation("org.telegram:telegrambots:6.5.0")
@@ -48,6 +50,7 @@ sourceSets {
     main {
         kotlin {
             srcDirs.add(file("$buildDir/generated-src/jooq/main"))
+            exclude("com/bardsoftware/libbotanique/*.kt")
         }
     }
 }

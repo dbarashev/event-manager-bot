@@ -1,4 +1,4 @@
-package com.bardsoftware.embot
+package com.bardsoftware.libbotanique
 
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.bots.DefaultBotOptions
@@ -15,16 +15,23 @@ import java.io.Serializable
 
 typealias MessageProcessor = (update: Update, sender: MessageSender) -> Unit
 
-class LongPollingConnector(private val processor: MessageProcessor) :
+class LongPollingConnector(
+    private val processor: MessageProcessor,
+    testReplyChatId: String?,
+    private val testBecome: String?) :
   TelegramLongPollingBot(createBotOptions(), System.getenv("TG_BOT_TOKEN") ?: ""),
   MessageSender {
+
   init {
     println("Started SQooL 2023 under name $botUsername")
-    setMessageSender(this)
+    if (!testReplyChatId.isNullOrBlank()) {
+      println("We will send all replies to $testReplyChatId")
+    }
+    setMessageSender(testReplyChatId?.let {TestMessageSender(it, this)} ?: this )
   }
   override fun getBotUsername() = System.getenv("TG_BOT_USERNAME") ?: "sqool_bot"
   override fun <T : BotApiMethod<Serializable>> send(msg: T) {
-    execute(msg)
+      execute(msg)
   }
 
   override fun sendDoc(doc: SendDocument) {
@@ -40,7 +47,26 @@ class LongPollingConnector(private val processor: MessageProcessor) :
   }
 
   override fun onUpdateReceived(update: Update) {
-    processor(update, this)
+    testBecome?.split(",")?.forEach { pair ->
+      val (source, become) = pair.split(":")
+      source.toLongOrNull()?.let {sourceId ->
+        if (update.message?.chatId == sourceId) {
+          update.message.chat.id = become.toLong()
+          update.message.from.id = become.toLong()
+        }
+        if (update.callbackQuery?.from?.id == sourceId) {
+          update.callbackQuery.from.id = become.toLong()
+        }
+      } ?: run {
+        if (update.message?.from?.userName == source) {
+          update.message.from.userName = become
+        }
+        if (update.callbackQuery?.from?.userName == source) {
+          update.callbackQuery.from.userName = become
+        }
+      }
+    }
+    processor(update, getMessageSender())
   }
 }
 

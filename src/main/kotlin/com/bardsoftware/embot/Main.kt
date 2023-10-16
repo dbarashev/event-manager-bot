@@ -2,6 +2,7 @@ package com.bardsoftware.embot
 
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.*
+import com.bardsoftware.libbotanique.*
 import org.telegram.telegrambots.meta.TelegramBotsApi
 import org.telegram.telegrambots.meta.api.methods.updates.SetWebhook
 import org.telegram.telegrambots.meta.api.objects.Update
@@ -10,7 +11,7 @@ import org.telegram.telegrambots.updatesreceivers.DefaultWebhook
 
 fun main(args: Array<String>) {
   if (args.isNotEmpty() && args[0] == "poll") {
-    TelegramBotsApi(DefaultBotSession::class.java).registerBot(LongPollingConnector(::processMessage))
+    TelegramBotsApi(DefaultBotSession::class.java).registerBot(LongPollingConnector(::processMessage, testReplyChatId = null, testBecome = null))
   } else {
     TelegramBotsApi(DefaultBotSession::class.java, DefaultWebhook().also {
       it.setInternalUrl("http://0.0.0.0:8080")
@@ -33,7 +34,7 @@ enum class CbEventCommand {
   val id get() = this.ordinal
 }
 fun processMessage(update: Update, sender: MessageSender) {
-  chain(update, sender) {
+  chain(update, sender, ::userSessionProvider) {
     val tgUserId = this.userId
     val tgUsername = this.userName
     val tg = this

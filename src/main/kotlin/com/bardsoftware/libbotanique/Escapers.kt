@@ -1,4 +1,4 @@
-package com.bardsoftware.embot
+package com.bardsoftware.libbotanique
 
 import java.util.*
 
@@ -298,7 +298,7 @@ object Escapers {
      * @param safeMax the highest 'safe' character
      * @return the builder instance
      */
-    fun setSafeRange(safeMin: Char, safeMax: Char): Escapers.Builder {
+    fun setSafeRange(safeMin: Char, safeMax: Char): Builder {
       this.safeMin = safeMin
       this.safeMax = safeMax
       return this

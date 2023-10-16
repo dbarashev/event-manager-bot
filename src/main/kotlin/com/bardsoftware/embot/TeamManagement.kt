@@ -4,6 +4,10 @@ import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.PARTICIPANT
 import com.bardsoftware.embot.db.tables.references.PARTICIPANTTEAM
 import com.bardsoftware.embot.db.tables.references.PARTICIPANTTEAMVIEW
+import com.bardsoftware.libbotanique.BtnData
+import com.bardsoftware.libbotanique.ChainBuilder
+import com.bardsoftware.libbotanique.OBJECT_MAPPER
+import com.bardsoftware.libbotanique.escapeMarkdown
 
 enum class CbTeamCommand {
   LANDING, ADD_DIALOG, CREATE, RESET;
@@ -42,17 +46,17 @@ fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
       }
       CbTeamCommand.ADD_DIALOG -> {
         db {
-          dialogState(participant.userId!!, DlgTeam.INPUT_NAME.id, "")
+          tg.userSession.save(DlgTeam.INPUT_NAME.id, "")
         }
         tg.reply("Как зовут участника?")
       }
       CbTeamCommand.RESET -> {
         db {
-          tg.fromUser?.resetDialog()
+          tg.userSession.reset()
         }
       }
       CbTeamCommand.CREATE -> {
-        tg.fromUser?.getDialogState()?.asJson()?.let { stateJson ->
+        tg.userSession.state?.asJson()?.let { stateJson ->
           val newDisplayName = stateJson["name"]?.asText() ?: run {
             tg.reply("Не указано имя")
             return@onCallback
@@ -67,7 +71,7 @@ fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
             insertInto(PARTICIPANTTEAM).columns(PARTICIPANTTEAM.LEADER_ID, PARTICIPANTTEAM.FOLLOWER_ID)
               .values(participant.id, newParticipant!!.id).execute()
           }
-          tg.fromUser.resetDialog()
+          tg.userSession.reset()
           tg.reply("Товарищ записан в вашу команду. Теперь вы можете регистрировать его во всех доступных вам событиях")
         }
       }
@@ -79,7 +83,7 @@ fun ParticipantRecord.teamMemberDialog(tg: ChainBuilder) {
   val participant = this
   tg.onInput(DlgTeam.INPUT_NAME.id) {msg ->
     db {
-      dialogState(participant.userId!!, DlgTeam.INPUT_AGE.id,
+      tg.userSession.save(DlgTeam.INPUT_AGE.id,
         OBJECT_MAPPER.createObjectNode().put("name", msg.trim()).toString()
       )
       tg.reply("Сколько ему лет? [введите число]")
@@ -95,7 +99,7 @@ fun ParticipantRecord.teamMemberDialog(tg: ChainBuilder) {
       return@onInput
     }
     db {
-      dialogState(participant.userId!!, DlgTeam.CREATE.id, stateJson.put("age", age).toString())
+      tg.userSession.save(DlgTeam.CREATE.id, stateJson.put("age", age).toString())
       tg.reply("""Ваш новый товарищ\:
         |Имя\: ${stateJson["name"]?.asText("")?.escapeMarkdown()}
         |Возраст\: $age

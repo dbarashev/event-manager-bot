@@ -1,4 +1,4 @@
-package com.bardsoftware.embot
+package com.bardsoftware.libbotanique
 
 import com.fasterxml.jackson.core.JsonParseException
 import com.fasterxml.jackson.core.JsonProcessingException
@@ -6,9 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import org.jooq.DSLContext
-import org.jooq.impl.DSL
-import org.jooq.impl.DSL.*
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument
@@ -70,26 +67,21 @@ enum class MessageSource {
   DIRECT
 }
 
-open class ChainBuilder(internal val update: Update, internal val sendMessage: MessageSender) {
-  val escaper = Escapers.builder().let {
-    for (c in charArrayOf('_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!')) {
-      it.addEscape(c, "\\$c")
-    }
-    it.build()
-  }
+open class ChainBuilder(internal val update: Update, internal val sendMessage: MessageSender, internal val sessionProvider: UserSessionProvider) {
   val messageText = (update.message?.text ?: "").trim()
-  val fromUser = update.message?.from ?: update.callbackQuery?.from
+  val fromUser get() = update.message?.from ?: update.callbackQuery?.from
   val messageId = update.callbackQuery?.message?.messageId ?: update.message?.messageId
 
   val userId = (this.fromUser?.id ?: -1).toLong()
-  var userName = this.fromUser?.userName ?: ""
+  val userName get() = this.fromUser?.userName ?: ""
   val chatId = update.message?.chatId
 
   val dialogState: DialogState? by lazy {
-    this.fromUser?.getDialogState()
+    this.userSession.state
   }
+  val userSession: UserSessionStorage get() = this.sessionProvider(userId)
 
-  private var replyChatId = update.message?.chatId ?: -1
+  private var replyChatId = update.message?.chatId ?:  this.update.callbackQuery?.message?.chatId ?: -1
 
   private val callbackHandlers = mutableListOf<CallbackHandler>()
   private val documentHandlers = mutableListOf<DocumentHandler>()
@@ -98,15 +90,19 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
   private val replies = mutableListOf<BotApiMethod<Serializable>>()
   internal val docReplies = mutableListOf<SendDocument>()
 
+  val callbackJson get() = this.update.callbackQuery?.let {
+    val jsonNode = OBJECT_MAPPER.readTree(this.update.callbackQuery.data)
+    if (jsonNode.isObject) {
+      jsonNode as ObjectNode
+    } else {
+      println("Malformed callback json: $jsonNode")
+      null
+    }
+  } ?: OBJECT_MAPPER.createObjectNode()
+
   fun parseJson(code: (ObjectNode) -> Unit) {
     try {
-      println(this.update.callbackQuery.data)
-      val jsonNode = OBJECT_MAPPER.readTree(this.update.callbackQuery.data)
-      if (jsonNode.isObject) {
-        code(jsonNode as ObjectNode)
-      } else {
-        println("Malformed callback json: $jsonNode")
-      }
+      code(this.callbackJson)
     } catch (ex: JsonProcessingException) {
       ex.printStackTrace()
     }
@@ -157,7 +153,8 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
   }
 
   fun onRegexp(pattern: String, options: Set<RegexOption> = setOf(RegexOption.MULTILINE), whenState: Int? = null,
-               messageSource: MessageSource = MessageSource.DIRECT, code: MatchHandler) {
+               messageSource: MessageSource = MessageSource.DIRECT, code: MatchHandler
+  ) {
     if (messageSource == MessageSource.DIRECT && update.message?.chatId != update.message?.from?.id) {
       return
     }
@@ -299,19 +296,31 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
     }
     return replies
   }
+
+  fun withUser(code: (ChainBuilder.(user: User) -> Unit)) {
+    this.update.message.from?.let {
+      code(this, it)
+    }
+  }
+
 }
 
-fun chain(update: Update, sender: MessageSender, handlers: (ChainBuilder.() -> Unit)) {
+fun chain(update: Update,
+          sender: MessageSender,
+          sessionProvider: UserSessionProvider = ::userSessionProviderMem,
+          handlers: (ChainBuilder.() -> Unit)) {
   try {
-    ChainBuilder(update, sender).apply(handlers).also {
+    ChainBuilder(update, sender, sessionProvider).apply(handlers).also {
       val replies = it.handle()
       replies.forEach { reply ->
         try {
+          println(reply)
           sender.send(reply)
         } catch (ex: TelegramApiRequestException) {
           ex.printStackTrace()
           when (reply) {
             is SendMessage -> {
+              println("Failed to send message to ${reply.chatId}")
               sender.send(
                 SendMessage(
                   reply.chatId,
@@ -346,6 +355,9 @@ private val ESCAPER = object : CharEscaper() {
 }
 
 fun (String).escapeMarkdown() = ESCAPER.escape(this)
+fun (BigDecimal).escapeMarkdown() = this.toString().escapeMarkdown()
+
+fun (List<BigDecimal>).escapeMarkdown() = this.map { it.escapeMarkdown() }.joinToString(separator = ", ")
 
 fun (ArrayNode).item(builder: ObjectNode.() -> Unit) {
   this.add(OBJECT_MAPPER.createObjectNode().also(builder))
@@ -369,37 +381,27 @@ data class DialogState(val state: Int, val data: String?) {
 
 fun User.displayName(): String = "${this.firstName} ${this.lastName}"
 
-fun User.getDialogState(): DialogState? {
-  val userId = this.id
-  return db {
-    select(field("state_id", Int::class.java), field("data", String::class.java))
-        .from("DialogState")
-        .where(field("tg_id").eq(userId))
-        .firstOrNull()?.let {
-          if (it.component1() == null) null else DialogState(it.component1(), it.component2())
-        }
+interface UserSessionStorage {
+  val state: DialogState?
+  fun reset()
+  fun save(stateId: Int, data: String)
+}
+
+typealias UserSessionProvider = (Long) -> UserSessionStorage
+
+class UserSessionStorageMem: UserSessionStorage {
+  private var stateImpl = DialogState(-1, "")
+  override val state: DialogState?
+    get() = stateImpl
+
+  override fun reset() {
+    stateImpl = DialogState(-1, "")
+  }
+
+  override fun save(stateId: Int, data: String) {
+    stateImpl = DialogState(stateId, data)
   }
 }
 
-fun User.resetDialog() {
-  db {
-    deleteFrom(table("DialogState")).where(field("tg_id").eq(this@resetDialog.id)).execute()
-  }
-}
-
-fun jsonCallback(builder: ObjectNode.() -> Unit) =
-    OBJECT_MAPPER.createObjectNode().also(builder).toString()
-
-internal fun DSLContext.dialogState(userId: Long, stateId: Int?, data: String? = null) {
-  insertInto(DSL.table("DialogState"))
-      .columns(
-          DSL.field("tg_id", Long::class.java),
-          DSL.field("state_id", Int::class.java),
-          DSL.field("data", String::class.java)
-      )
-      .values(userId.toLong(), stateId, data)
-      .onConflict(DSL.field("tg_id", Long::class.java)).doUpdate()
-      .set(DSL.field("state_id", Int::class.java), stateId)
-      .set(DSL.field("data", String::class.java), data)
-      .execute()
-}
+private val userSessionMap = mutableMapOf<Long, UserSessionStorageMem>()
+fun userSessionProviderMem(tgUserId: Long) = userSessionMap.computeIfAbsent(tgUserId) { UserSessionStorageMem() }

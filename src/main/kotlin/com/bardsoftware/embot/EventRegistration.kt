@@ -7,6 +7,9 @@ import com.bardsoftware.embot.db.tables.references.EVENT
 import com.bardsoftware.embot.db.tables.references.EVENTREGISTRATION
 import com.bardsoftware.embot.db.tables.references.EVENTTEAMREGISTRATIONVIEW
 import com.bardsoftware.embot.db.tables.references.EVENTVIEW
+import com.bardsoftware.libbotanique.BtnData
+import com.bardsoftware.libbotanique.ChainBuilder
+import com.bardsoftware.libbotanique.escapeMarkdown
 import com.fasterxml.jackson.databind.node.ObjectNode
 
 fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
