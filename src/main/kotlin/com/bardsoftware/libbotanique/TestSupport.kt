@@ -12,7 +12,11 @@ class TestMessageSender(private val destChatId: String,
     if (msg is SendMessage) {
       msg.chatId = destChatId
     }
-    println("!!!!!!!! msg=$msg")
+    delegate.send(msg)
+  }
+
+  override fun send(msg: SendMessage) {
+    msg.chatId = destChatId
     delegate.send(msg)
   }
 

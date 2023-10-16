@@ -34,6 +34,10 @@ class LongPollingConnector(
       execute(msg)
   }
 
+  override fun send(msg: SendMessage) {
+    execute(msg)
+  }
+
   override fun sendDoc(doc: SendDocument) {
     execute(doc)
   }
@@ -97,6 +101,10 @@ class WebHookConnector(private val processor: MessageProcessor) :
   }
 
   override fun <T : BotApiMethod<Serializable>> send(msg: T) {
+    execute(msg)
+  }
+
+  override fun send(msg: SendMessage) {
     execute(msg)
   }
 

@@ -41,6 +41,7 @@ typealias DocumentHandler = (DocumentList) -> Unit
 
 interface MessageSender {
   fun <T: BotApiMethod<Serializable>> send(msg: T)
+  fun send(msg: SendMessage)
   fun forward(msg: Message, toChat: String)
   fun sendDoc(doc: SendDocument)
 }
@@ -49,6 +50,11 @@ private var ourSender: MessageSender = object : MessageSender {
   override fun <T : BotApiMethod<Serializable>> send(msg: T) {
     TODO("Not yet implemented")
   }
+
+  override fun send(msg: SendMessage) {
+    TODO("Not yet implemented")
+  }
+
   override fun sendDoc(doc: SendDocument) {
     TODO("Not yet implemented")
   }
@@ -314,7 +320,6 @@ fun chain(update: Update,
       val replies = it.handle()
       replies.forEach { reply ->
         try {
-          println(reply)
           sender.send(reply)
         } catch (ex: TelegramApiRequestException) {
           ex.printStackTrace()
