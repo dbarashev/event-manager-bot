@@ -96,19 +96,21 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
   private val replies = mutableListOf<BotApiMethod<Serializable>>()
   internal val docReplies = mutableListOf<SendDocument>()
 
-  val callbackJson get() = this.update.callbackQuery?.let {
-    val jsonNode = OBJECT_MAPPER.readTree(this.update.callbackQuery.data)
-    if (jsonNode.isObject) {
-      jsonNode as ObjectNode
-    } else {
-      println("Malformed callback json: $jsonNode")
-      null
-    }
-  } ?: OBJECT_MAPPER.createObjectNode()
+  val callbackJson get() = this.update.callbackQuery?.data?.let {
+    if (it.isNotBlank()) {
+      val jsonNode = OBJECT_MAPPER.readTree(it)
+      if (jsonNode.isObject) {
+        jsonNode as ObjectNode
+      } else {
+        println("Malformed callback json: $jsonNode")
+        null
+      }
+    } else null
+  }
 
   fun parseJson(code: (ObjectNode) -> Unit) {
     try {
-      code(this.callbackJson)
+      this.callbackJson?.let(code)
     } catch (ex: JsonProcessingException) {
       ex.printStackTrace()
     }
@@ -152,7 +154,7 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
 
   fun onInput(whenState: Int, code: MessageHandler) {
     this.handlers += {msg ->
-      if (this.dialogState?.state == whenState) {
+      if (this.userSession.state?.state == whenState) {
         code(msg)
       }
     }
@@ -191,7 +193,7 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
       longitude = lon.toDouble()
     } as BotApiMethod<Serializable>)
   }
-  fun reply(msg: String, stop: Boolean = true,
+  fun reply(msg: String, stop: Boolean = false,
             buttons: List<BtnData> = listOf(),
             maxCols: Int = Int.MAX_VALUE,
             isMarkdown: Boolean = false,
@@ -371,9 +373,9 @@ fun (ArrayNode).item(builder: ObjectNode.() -> Unit) {
 val OBJECT_MAPPER = ObjectMapper()
 
 data class DialogState(val state: Int, val data: String?) {
-  fun asJson(): ObjectNode {
+  fun asJson(): ObjectNode? {
     try {
-      return jacksonObjectMapper().readTree(data) as ObjectNode
+      return jacksonObjectMapper().readTree(data) as? ObjectNode
     } catch (ex: JsonParseException) {
       println("""Failed to parse:
         |$data

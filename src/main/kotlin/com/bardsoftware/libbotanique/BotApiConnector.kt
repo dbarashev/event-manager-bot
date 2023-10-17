@@ -70,7 +70,11 @@ class LongPollingConnector(
         }
       }
     }
-    processor(update, getMessageSender())
+    try {
+      processor(update, getMessageSender())
+    } catch (ex: Exception) {
+      getMessageSender().send(SendMessage(update.message.chatId.toString(), "Oooops!"))
+    }
   }
 }
 
