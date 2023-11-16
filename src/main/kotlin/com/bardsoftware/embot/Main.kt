@@ -3,6 +3,7 @@ package com.bardsoftware.embot
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.*
 import com.bardsoftware.libbotanique.*
+import com.fasterxml.jackson.databind.node.ObjectNode
 import org.telegram.telegrambots.meta.TelegramBotsApi
 import org.telegram.telegrambots.meta.api.methods.updates.SetWebhook
 import org.telegram.telegrambots.meta.api.objects.Update
@@ -24,7 +25,7 @@ const val CB_EVENT = "e"
 const val CB_COMMAND = "c"
 
 enum class CbSection {
-  TEAM, EVENTS;
+  LANDING, MANAGER, PARTICIPANT, TEAM, EVENTS;
 
   val id get() = this.ordinal
 }
@@ -40,14 +41,11 @@ fun processMessage(update: Update, sender: MessageSender) {
     val tg = this
     val participant = getOrCreateParticipant(tgUserId, tgUsername)
 
+    participant.landing(this)
+    participant.organizationManagementCallbacks(this)
     participant.eventRegistrationCallbacks(this)
     participant.teamManagementCallbacks(this)
     participant.teamMemberDialog(this)
-    onCommand("start") {
-      val btnTeam = BtnData("Моя команда", """{"$CB_SECTION": ${CbSection.TEAM.id}}""")
-      val btnEvents = BtnData("Мои события", """{"$CB_SECTION": ${CbSection.EVENTS.id}}""")
-      tg.reply("Привет ${tg.fromUser?.displayName()}!", buttons = listOf(btnTeam, btnEvents))
-    }
   }
 }
 
@@ -70,5 +68,9 @@ fun findParticipant(id: Int): ParticipantRecord? = db {
   selectFrom(PARTICIPANT).where(PARTICIPANT.ID.eq(id)).fetchOne()
 }
 
-
+fun ObjectNode.getSection() = this[CB_SECTION]?.asInt()?.let(CbSection.values()::get) ?: CbSection.LANDING
+fun ObjectNode.setSection(section: CbSection) = this.apply {
+  removeAll()
+  put(CB_SECTION, section.id)
+}
 

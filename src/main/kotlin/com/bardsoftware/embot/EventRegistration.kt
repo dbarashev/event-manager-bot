@@ -20,13 +20,15 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       return@onCallback
     }
 
-    val event = node["e"]?.asInt()?.let { getEvent(it) } ?: run {
-      tg.reply("Ваши события:", buttons = participant.getEventButtons(node), maxCols = 1)
+    tg.userSession.reset()
+    val event = node.getEventId()?.let(::getEventRecord) ?: run {
+      // -------------------------------------------------------------------------
+      tg.reply("Ваши события:", buttons = participant.getEventButtons(node), maxCols = 1, isInplaceUpdate = true)
+      // -------------------------------------------------------------------------
       return@onCallback
     }
 
-    val command = node["c"]?.asInt()?.let { CbEventCommand.entries[it] } ?: CbEventCommand.LIST
-    when(command) {
+    when(node.getCommand()) {
       CbEventCommand.LIST -> {
         val registeredTeam = db {
           selectFrom(EVENTTEAMREGISTRATIONVIEW).where(
@@ -45,33 +47,42 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
           )} else {
             emptyList()
           }
-        tg.reply(
-          """*${event.title!!.escapeMarkdown()}*
-              |${event.seriesTitle?.escapeMarkdown() ?: ""}
-              | ${"\\-".repeat(20)}
-              | *Организаторы*\: ${event.organizerTitle?.escapeMarkdown() ?: ""}
-              | *Дата*\: ${event.start.toString().escapeMarkdown()}
-              | *Зарегистрированы*\: ${registeredLabel.escapeMarkdown()}
-            """.trimMargin(), isMarkdown = true, buttons = btns)
+        // -------------------------------------------------------------------------
+        tg.reply(event.formatDescription(registeredLabel), isMarkdown = true, buttons = btns, isInplaceUpdate = true)
+        // -------------------------------------------------------------------------
       }
 
       CbEventCommand.REGISTER -> {
-        node["id"]?.asInt()?.let(::findParticipant)?.let {otherParticipant ->
+        node.getParticipantId()?.let(::findParticipant)?.let {otherParticipant ->
+          node.clearParticipantId()
           event.register(otherParticipant)
-          tg.reply("Зарегистрировали: ${otherParticipant.displayName}")
+          // -------------------------------------------------------------------------
+          tg.reply("Зарегистрировали: ${otherParticipant.displayName}",
+            buttons = participant.getEventButtons(node),
+            maxCols = 1,
+            isInplaceUpdate = true
+          )
+          // -------------------------------------------------------------------------
+
           return@onCallback
         }
         participant.teamMembers().let {
           if (it.isEmpty()) {
             event.register(participant)
-            tg.reply("Вы зарегистрированы!", buttons = participant.getEventButtons(node), maxCols = 1)
+            // -------------------------------------------------------------------------
+            tg.reply("Вы зарегистрированы!", buttons = participant.getEventButtons(node), maxCols = 1, isInplaceUpdate = true)
+            // -------------------------------------------------------------------------
           } else {
-            tg.reply("Кого вы будете регистрировать?", buttons =
-              listOf(BtnData("Себя", node.put("id", participant.id).toString())) +
-              it.map { member ->
-                BtnData("${member.displayName}, ${member.age}", node.put("id", member.id).toString())
-              }
+            // -------------------------------------------------------------------------
+            tg.reply("Кого вы будете регистрировать?",
+              buttons = listOf(
+                BtnData("Себя", node.put("id", participant.id).toString())) + it.map { member ->
+                  BtnData("${member.displayName}, ${member.age}", node.put("id", member.id).toString())
+                },
+              maxCols = 4,
+              isInplaceUpdate = true
             )
+            // -------------------------------------------------------------------------
           }
         }
       }
@@ -85,13 +96,15 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
               )
           )).execute()
         }
-        tg.reply("Регистрация отменена", buttons = participant.getEventButtons(node), maxCols = 1)
+        // -------------------------------------------------------------------------
+        tg.reply("Регистрация отменена", buttons = participant.getEventButtons(node), maxCols = 1, isInplaceUpdate = true)
+        // -------------------------------------------------------------------------
       }
     }
   }
 }
 
-fun getEvent(id: Int): EventviewRecord? =
+fun getEventRecord(id: Int): EventviewRecord? =
   db {
     selectFrom(EVENTVIEW).where(EVENTVIEW.ID.eq(id)).fetchOne()
   }
@@ -112,6 +125,17 @@ fun ParticipantRecord.getEventButtons(srcNode: ObjectNode) =
 
 fun EventRecord.formatUncheckedLabel() = """${this.title} / ${this.start}"""
 
+fun EventviewRecord.formatDescription(registeredParticipants: String) =
+  """*${title!!.escapeMarkdown()}*
+    |${seriesTitle?.escapeMarkdown() ?: ""}
+    | ${"\\-".repeat(20)}
+    | *Организаторы*\: ${organizerTitle?.escapeMarkdown() ?: ""}
+    | *Дата*\: ${start.toString().escapeMarkdown()}
+    | 
+    | *Зарегистрированы*\: 
+    | ${registeredParticipants.escapeMarkdown()}
+  """.trimMargin()
+
 fun EventviewRecord.register(participant: ParticipantRecord) = db {
   insertInto(EVENTREGISTRATION).columns(EVENTREGISTRATION.PARTICIPANT_ID, EVENTREGISTRATION.EVENT_ID)
     .values(participant.id, this@register.id).execute()
@@ -123,3 +147,9 @@ fun EventviewRecord.unregister(participant: ParticipantRecord) = db {
       .and(EVENTREGISTRATION.PARTICIPANT_ID.eq(participant.id))
   ).execute()
 }
+
+private fun ObjectNode.getEventId() = this["e"]?.asInt()
+private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let { CbEventCommand.entries[it] } ?: CbEventCommand.LIST
+
+private fun ObjectNode.getParticipantId() = this["id"]?.asInt()
+private fun ObjectNode.clearParticipantId() = this.remove("id")
