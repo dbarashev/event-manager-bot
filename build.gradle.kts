@@ -24,6 +24,7 @@ dependencies {
     implementation("com.github.ajalt.clikt:clikt:4.2.0")
     implementation("org.telegram:telegrambots:6.5.0")
     implementation("org.telegram:telegrambotsextensions:6.5.0")
+    implementation("javax.xml.bind:jaxb-api:2.3.1")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.14.2")
     implementation("org.postgresql:postgresql:42.5.4")
     implementation("com.zaxxer:HikariCP:5.0.1")

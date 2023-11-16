@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod
+import org.telegram.telegrambots.meta.api.methods.ParseMode
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument
 import org.telegram.telegrambots.meta.api.methods.send.SendLocation
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
@@ -227,18 +228,18 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
             buttons: List<BtnData> = listOf(),
             maxCols: Int = Int.MAX_VALUE,
             isMarkdown: Boolean = false,
-            editMessageId: Int? = null,
+            isInplaceUpdate: Boolean = false,
             isInlineKeyboard: Boolean = true) {
-    if (editMessageId == null) {
+    if (!isInplaceUpdate) {
       replies.add(createMessage(msg, buttons, maxCols, isMarkdown, isInlineKeyboard).apply {
         chatId = this@ChainBuilder.replyChatId.toString()
       }  as BotApiMethod<Serializable>)
       this.stopped = this.stopped || stop
     } else {
       replies.add(EditMessageText().apply {
-        messageId = editMessageId
+        messageId = this@ChainBuilder.messageId
         chatId = this@ChainBuilder.replyChatId.toString()
-        enableMarkdown(isMarkdown)
+        if (isMarkdown) parseMode = ParseMode.MARKDOWNV2
         text = msg.ifBlank { "ПУСТОЙ ОТВЕТ" }
         if (buttons.isNotEmpty()) {
           replyMarkup = InlineKeyboardMarkup(
