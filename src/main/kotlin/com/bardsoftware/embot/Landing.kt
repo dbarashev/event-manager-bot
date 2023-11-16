@@ -54,3 +54,8 @@ fun userLanding(tg: ChainBuilder, isInplaceUpdate: Boolean) {
   tg.reply("Привет ${tg.fromUser?.displayName()}!", buttons = listOf(btnTeam, btnEvents), isInplaceUpdate = isInplaceUpdate)
 }
 
+fun returnToFirstLanding() =
+  BtnData("<< Назад", callbackData = OBJECT_MAPPER.createObjectNode().apply {
+    setSection(CbSection.LANDING)
+  }.toString())
+

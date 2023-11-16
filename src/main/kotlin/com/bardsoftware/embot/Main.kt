@@ -38,7 +38,6 @@ fun processMessage(update: Update, sender: MessageSender) {
   chain(update, sender, ::userSessionProvider) {
     val tgUserId = this.userId
     val tgUsername = this.userName
-    val tg = this
     val participant = getOrCreateParticipant(tgUserId, tgUsername)
 
     participant.landing(this)
@@ -53,7 +52,9 @@ fun getOrCreateParticipant(tgUserId: Long, tgUsername: String): ParticipantRecor
   txn {
     val tgUserRecord = selectFrom(TGUSER).where(TGUSER.TG_USERID.eq(tgUserId)).fetchOne()
       ?: insertInto(TGUSER).columns(TGUSER.TG_USERID, TGUSER.TG_USERNAME).values(tgUserId, tgUsername)
-        .returning().fetchOne()
+        .onConflict(TGUSER.TG_USERNAME).doUpdate().set(TGUSER.TG_USERID, tgUserId)
+        .returning()
+        .fetchOne()
       ?: throw RuntimeException("Failed to fetch or add user record")
 
     selectFrom(PARTICIPANT).where(PARTICIPANT.USER_ID.eq(tgUserId)).fetchOne()
