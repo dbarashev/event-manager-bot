@@ -92,7 +92,7 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
   private val callbackHandlers = mutableListOf<CallbackHandler>()
   private val documentHandlers = mutableListOf<DocumentHandler>()
   private val handlers = mutableListOf<MessageHandler>()
-  private var stopped = false
+  var stopped = false
   private val replies = mutableListOf<BotApiMethod<Serializable>>()
   internal val docReplies = mutableListOf<SendDocument>()
 
@@ -128,17 +128,22 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
     }
   }
 
-  fun onCommand(vararg commands: String, messageSource: MessageSource = MessageSource.DIRECT, code: MessageHandler) {
+  fun onCommand(vararg commands: String, messageSource: MessageSource = MessageSource.DIRECT, executeImmediately: Boolean = true, code: MessageHandler) {
     if (messageSource == MessageSource.DIRECT && update.message?.chatId != update.message?.from?.id) {
       return
     }
-    this.handlers += { msg ->
+    fun execute(msg: String) {
       commands.forEach { command ->
         val slashedCommand = "/$command"
         if (msg.lowercase().startsWith(slashedCommand)) {
           code(msg.substring(slashedCommand.length).trim())
         }
       }
+    }
+    if (executeImmediately && this.messageText.isNotBlank()) {
+      execute(this.messageText)
+    } else {
+      this.handlers += ::execute
     }
   }
 
@@ -193,15 +198,11 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
       longitude = lon.toDouble()
     } as BotApiMethod<Serializable>)
   }
-  fun reply(msg: String, stop: Boolean = false,
-            buttons: List<BtnData> = listOf(),
-            maxCols: Int = Int.MAX_VALUE,
-            isMarkdown: Boolean = false,
-            editMessageId: Int? = null,
-            isInlineKeyboard: Boolean = true) {
-    if (editMessageId == null) {
-      replies.add(SendMessage().apply {
-        chatId = this@ChainBuilder.replyChatId.toString()
+
+  fun createMessage(
+    msg: String, buttons: List<BtnData> = listOf(), maxCols: Int = Int.MAX_VALUE,
+    isMarkdown: Boolean = false, isInlineKeyboard: Boolean = true)  =
+      SendMessage().apply {
         enableMarkdownV2(isMarkdown)
         text = msg.ifBlank { "ПУСТОЙ ОТВЕТ" }
         if (buttons.isNotEmpty()) {
@@ -220,7 +221,18 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
             }
           }
         }
-      } as BotApiMethod<Serializable>)
+      }
+
+  fun reply(msg: String, stop: Boolean = false,
+            buttons: List<BtnData> = listOf(),
+            maxCols: Int = Int.MAX_VALUE,
+            isMarkdown: Boolean = false,
+            editMessageId: Int? = null,
+            isInlineKeyboard: Boolean = true) {
+    if (editMessageId == null) {
+      replies.add(createMessage(msg, buttons, maxCols, isMarkdown, isInlineKeyboard).apply {
+        chatId = this@ChainBuilder.replyChatId.toString()
+      }  as BotApiMethod<Serializable>)
       this.stopped = this.stopped || stop
     } else {
       replies.add(EditMessageText().apply {
