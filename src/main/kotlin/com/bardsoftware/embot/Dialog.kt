@@ -41,7 +41,7 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
 
   private fun replyStep(dialogData: ObjectNode, stepIdx: Int) {
     dialogData.put("next_field", steps[stepIdx].fieldName)
-    tg.userSession.save(OrgManagerCommand.EVENT_ADD.id, dialogData.toString())
+    tg.userSession.save(this.id, dialogData.toString())
     tg.reply(steps[stepIdx].question, buttons = listOf(
       BtnData("<< Выйти", callbackData = exitPayload)
     ))
@@ -69,7 +69,6 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
     }
     tg.onInput(this.id) { msg ->
       val dialogData = tg.userSession.state?.asJson() ?: OBJECT_MAPPER.createObjectNode()
-      println(dialogData)
       val expectedField = dialogData["next_field"]?.asText() ?: steps[0].fieldName
       val expectedStepIdx = steps.indexOfFirst { it.fieldName == expectedField }
       if (expectedStepIdx == -1) {

@@ -75,10 +75,10 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
   tg.dialog(
     id = OrgManagerCommand.EVENT_ADD.id,
     intro = """
-      Создаём новое событие. 
+      Создаём новое событие\. 
       
       _Процесс можно прервать в любой момент кнопкой "Отменить"_
-      """.trimIndent().escapeMarkdown()) {
+      """.trimIndent()) {
 
     trigger = json {
       setSection(CbSection.MANAGER)

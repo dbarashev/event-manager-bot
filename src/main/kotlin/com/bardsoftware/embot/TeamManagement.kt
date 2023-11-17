@@ -6,19 +6,16 @@ import com.bardsoftware.embot.db.tables.references.PARTICIPANTTEAM
 import com.bardsoftware.embot.db.tables.references.PARTICIPANTTEAMVIEW
 import com.bardsoftware.libbotanique.BtnData
 import com.bardsoftware.libbotanique.ChainBuilder
-import com.bardsoftware.libbotanique.OBJECT_MAPPER
 import com.bardsoftware.libbotanique.escapeMarkdown
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.github.michaelbull.result.Err
+import com.github.michaelbull.result.Ok
 
 enum class CbTeamCommand {
-  LANDING, ADD_DIALOG, CREATE, RESET;
+  LANDING, ADD_DIALOG, RESET;
   val id get() = this.ordinal
 }
 
-enum class DlgTeam {
-  INPUT_NAME, INPUT_AGE, CREATE;
-  val id get() = this.ordinal
-}
 fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
   val participant = this
   tg.onCallback { node ->
@@ -33,81 +30,47 @@ fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
         tg.userSession.reset()
       }
       CbTeamCommand.ADD_DIALOG -> {
-        tg.userSession.save(DlgTeam.INPUT_NAME.id, "")
-        tg.reply("Как зовут товарища?")
+        // Handled in the dialog code below
       }
       CbTeamCommand.RESET -> {
         tg.userSession.reset()
       }
-      CbTeamCommand.CREATE -> {
-        tg.userSession.state?.asJson()?.let { stateJson ->
-          val newDisplayName = stateJson["name"]?.asText() ?: run {
-            tg.reply("Не указано имя")
-            return@onCallback
-          }
-          val newAge = stateJson["age"]?.asInt() ?: run {
-            tg.reply("Не указан возраст")
-            return@onCallback
-          }
-          db {
-            val newParticipant = insertInto(PARTICIPANT).columns(PARTICIPANT.DISPLAY_NAME, PARTICIPANT.AGE)
-              .values(newDisplayName, newAge).returning().fetchOne()
-            insertInto(PARTICIPANTTEAM).columns(PARTICIPANTTEAM.LEADER_ID, PARTICIPANTTEAM.FOLLOWER_ID)
-              .values(participant.id, newParticipant!!.id).execute()
-          }
-          tg.userSession.reset()
-          tg.reply("Товарищ записан в вашу команду. Теперь вы можете регистрировать его во всех доступных вам событиях")
-          landing(tg, isInplaceUpdate = false, node = node)
-        }
+    }
+  }
+  tg.dialog(
+    id = CbTeamCommand.ADD_DIALOG.id,
+    intro = """
+      Создаём нового члена вашей команды\. 
+      
+      _Процесс можно прервать в любой момент кнопкой "Отменить"_
+      """.trimIndent()) {
+    trigger = json {
+      setSection(CbSection.TEAM)
+      setCommand(CbTeamCommand.ADD_DIALOG)
+    }
+    exitPayload = json {
+      setSection(CbSection.TEAM)
+      setCommand(CbTeamCommand.LANDING)
+    }
+    step("name", DialogDataType.TEXT, "Имя", "Как зовут товарища?")
+    step("age", DialogDataType.INT, "Возраст", "Сколько ему/ей лет? [просто число]",
+      validatorReply = "Введите неотрицательное число арабскими цифрами. Например: 13"
+    )
+    confirm("Создаём?") {json ->
+      val newDisplayName = json["name"]?.asText() ?: return@confirm Err("Не указано имя")
+      val newAge = json["age"]?.asInt() ?: return@confirm Err("Не указан возраст")
+
+      db {
+        val newParticipant = insertInto(PARTICIPANT).columns(PARTICIPANT.DISPLAY_NAME, PARTICIPANT.AGE)
+          .values(newDisplayName, newAge).returning().fetchOne()
+        insertInto(PARTICIPANTTEAM).columns(PARTICIPANTTEAM.LEADER_ID, PARTICIPANTTEAM.FOLLOWER_ID)
+          .values(participant.id, newParticipant!!.id).execute()
       }
+      tg.userSession.reset()
+      tg.reply("Товарищ записан в вашу команду. Теперь вы можете регистрировать его во всех доступных вам событиях")
+      return@confirm Ok(json)
     }
   }
-}
-
-fun ParticipantRecord.teamMemberDialog(tg: ChainBuilder) {
-  tg.onInput(DlgTeam.INPUT_NAME.id) {msg ->
-    db {
-      tg.userSession.save(DlgTeam.INPUT_AGE.id,
-        OBJECT_MAPPER.createObjectNode().put("name", msg.trim()).toString()
-      )
-      // ----------------------------------------------------------------------------------
-      tg.reply("Сколько ему лет? [введите число]", stop = true)
-      // ----------------------------------------------------------------------------------
-    }
-  }
-  tg.onInput(DlgTeam.INPUT_AGE.id) { msg ->
-    val age = msg.toIntOrNull() ?: run {
-      // ----------------------------------------------------------------------------------
-      tg.reply("Введите просто число")
-      // ----------------------------------------------------------------------------------
-      return@onInput
-    }
-    val stateJson = tg.dialogState?.asJson() ?: run {
-      // ----------------------------------------------------------------------------------
-      tg.reply("Кажется, что-то пошло не так, я потерял контекст разговора")
-      // ----------------------------------------------------------------------------------
-      return@onInput
-    }
-    db {
-      tg.userSession.save(DlgTeam.CREATE.id, stateJson.put("age", age).toString())
-      // ----------------------------------------------------------------------------------
-      tg.reply("""Ваш новый товарищ\:
-        |Имя\: ${stateJson["name"]?.asText("")?.escapeMarkdown()}
-        |Возраст\: $age
-      """.trimMargin(),
-        isMarkdown = true,
-        buttons = listOf(
-          BtnData("Создать", OBJECT_MAPPER.createObjectNode().apply {
-            setSection(CbSection.TEAM)
-            setCommand(CbTeamCommand.CREATE)
-          }.toString()),
-          BtnData("Отменить", createCancelAddDialogCallback())
-        )
-      )
-      // ----------------------------------------------------------------------------------
-    }
-  }
-
 }
 
 fun landing(tg: ChainBuilder, isInplaceUpdate: Boolean, node: ObjectNode) {
@@ -138,11 +101,6 @@ fun ParticipantRecord.teamMembers(): List<ParticipantRecord> =
     }
   }
 
-
-private fun createCancelAddDialogCallback() = OBJECT_MAPPER.createObjectNode().apply {
-  setSection(CbSection.TEAM)
-  setCommand(CbTeamCommand.LANDING)
-}.toString()
 
 private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let {CbTeamCommand.entries[it]} ?: CbTeamCommand.LANDING
 private fun ObjectNode.setCommand(command: CbTeamCommand) = this.put("c", command.id)

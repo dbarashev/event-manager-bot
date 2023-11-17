@@ -44,7 +44,6 @@ fun processMessage(update: Update, sender: MessageSender) {
     participant.organizationManagementCallbacks(this)
     participant.eventRegistrationCallbacks(this)
     participant.teamManagementCallbacks(this)
-    participant.teamMemberDialog(this)
   }
 }
 
