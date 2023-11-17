@@ -43,7 +43,8 @@ fun regularLanding(tg: ChainBuilder, isInplaceUpdate: Boolean) {
         BtnData("Участник >>", callbackData = OBJECT_MAPPER.createObjectNode().apply {
           setSection(CbSection.PARTICIPANT)
         }.toString())
-      )
+      ),
+      isInplaceUpdate = isInplaceUpdate
     )
   }
 }
@@ -51,7 +52,8 @@ fun regularLanding(tg: ChainBuilder, isInplaceUpdate: Boolean) {
 fun userLanding(tg: ChainBuilder, isInplaceUpdate: Boolean) {
   val btnTeam = BtnData("Моя команда", """{"$CB_SECTION": ${CbSection.TEAM.id}}""")
   val btnEvents = BtnData("Мои события", """{"$CB_SECTION": ${CbSection.EVENTS.id}}""")
-  tg.reply("Привет ${tg.fromUser?.displayName()}!", buttons = listOf(btnTeam, btnEvents), isInplaceUpdate = isInplaceUpdate)
+  tg.reply("Привет ${tg.fromUser?.displayName()}!", buttons = listOf(btnTeam, btnEvents, returnToFirstLanding()),
+    isInplaceUpdate = isInplaceUpdate)
 }
 
 fun returnToFirstLanding() =
@@ -59,3 +61,7 @@ fun returnToFirstLanding() =
     setSection(CbSection.LANDING)
   }.toString())
 
+fun returnToParticipantLanding() =
+  BtnData("<< Назад", callbackData = OBJECT_MAPPER.createObjectNode().apply {
+    setSection(CbSection.PARTICIPANT)
+  }.toString())

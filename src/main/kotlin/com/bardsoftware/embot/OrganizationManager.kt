@@ -6,13 +6,14 @@ import com.bardsoftware.embot.db.tables.references.*
 import com.bardsoftware.libbotanique.BtnData
 import com.bardsoftware.libbotanique.ChainBuilder
 import com.bardsoftware.libbotanique.OBJECT_MAPPER
+import com.bardsoftware.libbotanique.escapeMarkdown
 import com.fasterxml.jackson.databind.node.ObjectNode
-import com.github.michaelbull.result.Result
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.github.michaelbull.result.Err
+import com.github.michaelbull.result.Ok
 
 enum class OrgManagerCommand {
-  LANDING, EVENT_INFO, EVENT_ADD;
+  LANDING, EVENT_INFO, EVENT_ADD, EVENT_DELETE;
 
   val id get() = ordinal + 200
 }
@@ -22,7 +23,9 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
       return@onCallback
     }
 
-    tg.userSession.reset()
+    if (node.getDialogId() == null) {
+      tg.userSession.reset()
+    }
     when (node.getCommand()) {
       OrgManagerCommand.LANDING -> {
         val orgs = getManagedOrganizations(this.userId!!)
@@ -40,59 +43,67 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
       }
       OrgManagerCommand.EVENT_INFO -> {
         node.getEventId()?.let(::getEventRecord)?.let { event ->
-          val participants = event.getParticipants().joinToString(separator = "\n ") {
-            it.participantName!!
+          val participants = event.getParticipants()
+          val participantNames = participants.joinToString(separator = "\n") {
+            "${it.participantName!!.escapeMarkdown()}"
           }.trim().ifBlank { "пока никто не зарегистрировался" }
-          tg.reply(event.formatDescription(participants),
+          tg.reply(event.formatDescription("""
+            |$participantNames
+            |
+            |Итого ${participants.size}""".trimMargin()),
             buttons = listOf(
+              BtnData("Удалить", callbackData = json(node) {
+                setCommand(OrgManagerCommand.EVENT_DELETE)
+              }),
               createEscButton()
             ),
             isMarkdown = true, isInplaceUpdate = true
           )
         }
       }
-
       OrgManagerCommand.EVENT_ADD -> {
-        tg.userSession.save(OrgManagerCommand.EVENT_ADD.id, OBJECT_MAPPER.createObjectNode().apply {
-          this.put("org_id", node.getOrganizationId())
-          this.put("series_id", 1)
-          this.put("next_field", "title")
-          tg.reply("Введите название:")
-        }.toString())
+        // This is handled in the dialog code
       }
-    }
-  }
-  tg.onInput(OrgManagerCommand.EVENT_ADD.id) {input ->
-    val eventData = tg.userSession.state?.asJson() ?: OBJECT_MAPPER.createObjectNode()
-    val nextField = eventData["next_field"]?.asText() ?: "title"
-    when (nextField){
-      "title" -> {
-        eventData.put("title", input)
-        eventData.put("next_field", "start")
-        tg.userSession.save(OrgManagerCommand.EVENT_ADD.id, eventData.toString())
-        tg.reply("Введите дату [YYYY-MM-DD]:")
-      }
-      "start" -> {
-        input.toDate().getOrElse {
-          tg.reply("Дата должна быть в формате YYYY-DD-MM")
-          return@onInput
-        }
-        eventData.put("start", input)
-        if (createEvent(eventData)) {
-          tg.userSession.reset()
-          tg.reply("Событие создано", buttons = listOf(createEscButton()))
-        } else {
-          tg.userSession.reset()
-          tg.reply("Что-то пошло не так", buttons = listOf(createEscButton()))
+      OrgManagerCommand.EVENT_DELETE -> {
+        node.getEventId()?.let {
+          deleteEvent(node)
+          tg.reply("Событие перемещено в помойку", buttons = listOf(createEscButton()), isInplaceUpdate = true)
         }
       }
     }
   }
+  tg.dialog(
+    id = OrgManagerCommand.EVENT_ADD.id,
+    intro = """
+      Создаём новое событие. 
+      
+      _Процесс можно прервать в любой момент кнопкой "Отменить"_
+      """.trimIndent().escapeMarkdown()) {
 
+    trigger = json {
+      setSection(CbSection.MANAGER)
+      setCommand(OrgManagerCommand.EVENT_ADD)
+    }
+    setup = { input -> jacksonObjectMapper().createObjectNode().apply {
+      put("org_id", input.getOrganizationId())
+      put("series_id", 1)
+    }}
+    exitPayload = json {
+      setSection(CbSection.MANAGER)
+      setCommand(OrgManagerCommand.LANDING)
+    }
+    step("title", DialogDataType.TEXT, "Название", "Название события:")
+    step("start", DialogDataType.DATE, "Дата", "Дата события [YYYY-MM-DD]:",
+      "Введите дату в формате YYYY-MM-DD. Например, 2023-11-21.")
+    step("limit", DialogDataType.INT, "Участников (max)", "Максимальное количество участников:")
+    confirm("Создаём?") {json ->
+      if (createEvent(json)) Ok(json) else Err("Что-то пошло не так")
+    }
+  }
 }
 
 fun EventviewRecord.getParticipants() = db {
-  selectFrom(EVENTTEAMREGISTRATIONVIEW).where(EVENTTEAMREGISTRATIONVIEW.ID.eq(this@getParticipants.id!!))
+  selectFrom(EVENTTEAMREGISTRATIONVIEW).where(EVENTTEAMREGISTRATIONVIEW.ID.eq(this@getParticipants.id!!)).toList()
 }
 fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder, organizerId: Int, organizerTitle: String) {
   val eventAddBtns = listOf(
@@ -111,10 +122,12 @@ fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder, organizerId: Int, 
   }.toList()
   val escButtons = listOf(returnToFirstLanding())
   tg.reply("""
-    *Организация:* $organizerTitle
+    *${organizerTitle.escapeMarkdown()}*
     
-    Выберите событие
-    """.trimIndent(), buttons = eventAddBtns + eventInfoBtns + escButtons, maxCols = 1, isInplaceUpdate = true)
+    Тут можно управлять событиями\. Можно добавить новое или узнать состояние существующего\. 
+    """.trimIndent(),
+    buttons = eventAddBtns + eventInfoBtns + escButtons,
+    maxCols = 1, isInplaceUpdate = true, isMarkdown = true)
 }
 
 
@@ -132,8 +145,16 @@ fun createEvent(eventData: ObjectNode): Boolean =
     val title = eventData["title"]?.asText() ?: return@db false
     val start = eventData["start"]?.asText()?.toDate()?.getOrNull() ?: return@db false
     val seriesId = eventData["series_id"]?.asInt() ?: return@db false
-    insertInto(EVENT, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID).values(title, start.atStartOfDay(), seriesId).execute()
+    val limit = eventData["limit"]?.asInt()
+    insertInto(EVENT, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID, EVENT.PARTICIPANT_LIMIT)
+      .values(title, start.atStartOfDay(), seriesId, limit)
+      .execute()
     true
+  }
+
+fun deleteEvent(eventData: ObjectNode) =
+  db {
+    update(EVENT).set(EVENT.IS_DELETED, true).where(EVENT.ID.eq(eventData.getEventId())).execute()
   }
 
 private fun createEscButton() =
@@ -148,6 +169,3 @@ private fun ObjectNode.setEventId(eventId: Int) = this.put("e", eventId)
 private fun ObjectNode.getEventId() = this["e"]?.asInt()
 private fun ObjectNode.setOrganizationId(organizationId: Int) = this.put("o", organizationId)
 private fun ObjectNode.getOrganizationId() = this["o"]?.asInt()
-
-private fun String.toDate() =
-  Result.runCatching { LocalDate.parse(this@toDate, DateTimeFormatter.ISO_DATE) }

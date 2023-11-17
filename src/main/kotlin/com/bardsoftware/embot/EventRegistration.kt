@@ -9,6 +9,7 @@ import com.bardsoftware.embot.db.tables.references.EVENTTEAMREGISTRATIONVIEW
 import com.bardsoftware.embot.db.tables.references.EVENTVIEW
 import com.bardsoftware.libbotanique.BtnData
 import com.bardsoftware.libbotanique.ChainBuilder
+import com.bardsoftware.libbotanique.OBJECT_MAPPER
 import com.bardsoftware.libbotanique.escapeMarkdown
 import com.fasterxml.jackson.databind.node.ObjectNode
 
@@ -23,7 +24,9 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
     tg.userSession.reset()
     val event = node.getEventId()?.let(::getEventRecord) ?: run {
       // -------------------------------------------------------------------------
-      tg.reply("Ваши события:", buttons = participant.getEventButtons(node), maxCols = 1, isInplaceUpdate = true)
+      tg.reply("Ваши события:",
+        buttons = participant.getEventButtons(node) + returnToParticipantLanding(),
+        maxCols = 1, isInplaceUpdate = true)
       // -------------------------------------------------------------------------
       return@onCallback
     }
@@ -48,7 +51,8 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
             emptyList()
           }
         // -------------------------------------------------------------------------
-        tg.reply(event.formatDescription(registeredLabel), isMarkdown = true, buttons = btns, isInplaceUpdate = true)
+        tg.reply(event.formatDescription(registeredLabel), isMarkdown = true, buttons = btns + returnToEventRegistrationLanding(),
+          isInplaceUpdate = true)
         // -------------------------------------------------------------------------
       }
 
@@ -131,6 +135,7 @@ fun EventviewRecord.formatDescription(registeredParticipants: String) =
     | ${"\\-".repeat(20)}
     | *Организаторы*\: ${organizerTitle?.escapeMarkdown() ?: ""}
     | *Дата*\: ${start.toString().escapeMarkdown()}
+    | *Max\. участников*\: ${participantLimit?.toString() ?: "\\-"}
     | 
     | *Зарегистрированы*\: 
     | ${registeredParticipants.escapeMarkdown()}
@@ -147,6 +152,11 @@ fun EventviewRecord.unregister(participant: ParticipantRecord) = db {
       .and(EVENTREGISTRATION.PARTICIPANT_ID.eq(participant.id))
   ).execute()
 }
+
+fun returnToEventRegistrationLanding() =
+  BtnData("<< Назад", callbackData = OBJECT_MAPPER.createObjectNode().apply {
+    setSection(CbSection.EVENTS)
+  }.toString())
 
 private fun ObjectNode.getEventId() = this["e"]?.asInt()
 private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let { CbEventCommand.entries[it] } ?: CbEventCommand.LIST

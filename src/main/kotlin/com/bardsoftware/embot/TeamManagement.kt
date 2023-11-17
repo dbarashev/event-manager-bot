@@ -27,10 +27,10 @@ fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
       return@onCallback
     }
 
-    tg.userSession.reset()
     when (node.getCommand()) {
       CbTeamCommand.LANDING -> {
         landing(tg, node = node, isInplaceUpdate = true)
+        tg.userSession.reset()
       }
       CbTeamCommand.ADD_DIALOG -> {
         tg.userSession.save(DlgTeam.INPUT_NAME.id, "")
