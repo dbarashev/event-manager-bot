@@ -3,10 +3,7 @@ package com.bardsoftware.embot
 import com.bardsoftware.embot.db.tables.records.EventRecord
 import com.bardsoftware.embot.db.tables.records.EventviewRecord
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
-import com.bardsoftware.embot.db.tables.references.EVENT
-import com.bardsoftware.embot.db.tables.references.EVENTREGISTRATION
-import com.bardsoftware.embot.db.tables.references.EVENTTEAMREGISTRATIONVIEW
-import com.bardsoftware.embot.db.tables.references.EVENTVIEW
+import com.bardsoftware.embot.db.tables.references.*
 import com.bardsoftware.libbotanique.BtnData
 import com.bardsoftware.libbotanique.ChainBuilder
 import com.bardsoftware.libbotanique.OBJECT_MAPPER
@@ -35,7 +32,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       CbEventCommand.LIST -> {
         val registeredTeam = db {
           selectFrom(EVENTTEAMREGISTRATIONVIEW).where(
-            EVENTTEAMREGISTRATIONVIEW.LEADER_ID.eq(participant.id)
+            EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(participant.userId)
               .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(event.id))
           ).toList()
         }
@@ -59,7 +56,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       CbEventCommand.REGISTER -> {
         node.getParticipantId()?.let(::findParticipant)?.let {otherParticipant ->
           node.clearParticipantId()
-          event.register(otherParticipant)
+          event.register(participant, otherParticipant)
           // -------------------------------------------------------------------------
           tg.reply("Зарегистрировали: ${otherParticipant.displayName}",
             buttons = participant.getEventButtons(node),
@@ -72,7 +69,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
         }
         participant.teamMembers().let {
           if (it.isEmpty()) {
-            event.register(participant)
+            event.register(participant, participant)
             // -------------------------------------------------------------------------
             tg.reply("Вы зарегистрированы!", buttons = participant.getEventButtons(node), maxCols = 1, isInplaceUpdate = true)
             // -------------------------------------------------------------------------
@@ -95,7 +92,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
           deleteFrom(EVENTREGISTRATION).where(EVENTREGISTRATION.PARTICIPANT_ID.`in`(
             select(EVENTTEAMREGISTRATIONVIEW.PARTICIPANT_ID)
               .from(EVENTTEAMREGISTRATIONVIEW)
-              .where(EVENTTEAMREGISTRATIONVIEW.LEADER_ID.eq(participant.id)
+              .where(EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(participant.userId)
                 .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(event.id))
               )
           )).execute()
@@ -129,7 +126,7 @@ fun ParticipantRecord.getEventButtons(srcNode: ObjectNode) =
 
 fun EventRecord.formatUncheckedLabel() = """${this.title} / ${this.start}"""
 
-fun EventviewRecord.formatDescription(registeredParticipants: String) =
+fun EventviewRecord.formatDescription(registeredParticipantsMdwn: String) =
   """*${title!!.escapeMarkdown()}*
     |${seriesTitle?.escapeMarkdown() ?: ""}
     | ${"\\-".repeat(20)}
@@ -138,12 +135,17 @@ fun EventviewRecord.formatDescription(registeredParticipants: String) =
     | *Max\. участников*\: ${participantLimit?.toString() ?: "\\-"}
     | 
     | *Зарегистрированы*\: 
-    | ${registeredParticipants.escapeMarkdown()}
+    | ${registeredParticipantsMdwn}
   """.trimMargin()
 
-fun EventviewRecord.register(participant: ParticipantRecord) = db {
-  insertInto(EVENTREGISTRATION).columns(EVENTREGISTRATION.PARTICIPANT_ID, EVENTREGISTRATION.EVENT_ID)
-    .values(participant.id, this@register.id).execute()
+fun EventviewRecord.register(registrant: ParticipantRecord, participant: ParticipantRecord) = txn {
+  val subscriptionId = selectFrom(EVENTSERIESSUBSCRIPTION)
+    .where(EVENTSERIESSUBSCRIPTION.SERIES_ID.eq(this@register.seriesId)
+      .and(EVENTSERIESSUBSCRIPTION.PARTICIPANT_ID.eq(registrant.id))
+    ).fetchOne()?.id ?: return@txn
+  insertInto(EVENTREGISTRATION)
+    .columns(EVENTREGISTRATION.PARTICIPANT_ID, EVENTREGISTRATION.EVENT_ID, EVENTREGISTRATION.SUBSCRIPTION_ID)
+    .values(participant.id, this@register.id, subscriptionId).execute()
 }
 
 fun EventviewRecord.unregister(participant: ParticipantRecord) = db {

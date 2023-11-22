@@ -1,5 +1,6 @@
 package com.bardsoftware.embot
 
+import com.bardsoftware.embot.db.tables.records.EventteamregistrationviewRecord
 import com.bardsoftware.embot.db.tables.records.EventviewRecord
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.*
@@ -45,7 +46,11 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
         node.getEventId()?.let(::getEventRecord)?.let { event ->
           val participants = event.getParticipants()
           val participantNames = participants.joinToString(separator = "\n") {
-            "${it.participantName!!.escapeMarkdown()}"
+            """
+              ${it.participantName!!.escapeMarkdown()}\, ${it.participantAge}\. 
+              Связь\: [${it.registrantUsername}](https://t.me/${it.registrantUsername}), [\+995551172098](tel:+995551172098)
+              
+              """.trimIndent()
           }.trim().ifBlank { "пока никто не зарегистрировался" }
           tg.reply(event.formatDescription("""
             |$participantNames
@@ -102,7 +107,7 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
   }
 }
 
-fun EventviewRecord.getParticipants() = db {
+fun EventviewRecord.getParticipants(): List<EventteamregistrationviewRecord> = db {
   selectFrom(EVENTTEAMREGISTRATIONVIEW).where(EVENTTEAMREGISTRATIONVIEW.ID.eq(this@getParticipants.id!!)).toList()
 }
 fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder, organizerId: Int, organizerTitle: String) {

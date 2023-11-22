@@ -76,9 +76,14 @@ WHERE NOT E.is_deleted;
 CREATE VIEW EventTeamRegistrationView AS
 SELECT EV.*, P.id AS participant_id,
        P.display_name AS participant_name,
-       CASE WHEN PT.leader_id IS NULL THEN P.id ELSE PT.leader_id END AS leader_id
+       P.age AS participant_age,
+       P1.user_id AS registrant_tguserid,
+       P1.display_name AS registrant_name,
+       U1.tg_username AS registrant_username
 FROM EventView EV JOIN EventRegistration ER ON EV.id = ER.event_id
-JOIN Participant P on ER.participant_id = P.id
-LEFT JOIN ParticipantTeam PT ON P.id = PT.follower_id;
+    JOIN EventSeriesSubscription ESS ON ER.subscription_id = ESS.id
+    JOIN Participant P1 ON ESS.participant_id = P1.id
+    JOIN TgUser U1 ON P1.user_id = U1.tg_userid
+JOIN Participant P on ER.participant_id = P.id;
 
 create table DialogState(tg_id bigint primary key, state_id int, data text);
