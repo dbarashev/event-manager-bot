@@ -91,7 +91,7 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
     }
     setup = { input -> jacksonObjectMapper().createObjectNode().apply {
       put("org_id", input.getOrganizationId())
-      put("series_id", 1)
+      put("series_id", getDefaultSeries(input.getOrganizationId()!!)!!.id)
     }}
     exitPayload = json {
       setSection(CbSection.MANAGER)
@@ -143,6 +143,10 @@ fun getManagedOrganizations(tgUserId: Long) = db {
 
 fun getAllEvents(organizerId: Int) = db {
   selectFrom(EVENTVIEW).where(EVENTVIEW.ORGANIZER_ID.eq(organizerId)).toList()
+}
+
+fun getDefaultSeries(organizerId: Int) = db {
+  selectFrom(EVENTSERIES).where(EVENTSERIES.ORGANIZER_ID.eq(organizerId).and(EVENTSERIES.IS_DEFAULT)).fetchOne()
 }
 
 fun createEvent(eventData: ObjectNode): Boolean =

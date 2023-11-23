@@ -117,11 +117,11 @@ fun getAvailableEvents(participant: ParticipantRecord): List<EventRecord> =
 fun ParticipantRecord.getEventButtons(srcNode: ObjectNode) =
   getAvailableEvents(this).map {
     BtnData(it.formatUncheckedLabel(),
-      srcNode.put(CB_EVENT, it.id)
-        .put(CB_COMMAND, CbEventCommand.LIST.id)
-        .toString()
+      callbackData = srcNode.apply {
+        setEventId(it.id!!)
+        setCommand(CbEventCommand.LIST)
+      }.toString()
     )
-
   }.toList()
 
 fun EventRecord.formatUncheckedLabel() = """${this.title} / ${this.start}"""
@@ -161,7 +161,8 @@ fun returnToEventRegistrationLanding() =
   }.toString())
 
 private fun ObjectNode.getEventId() = this["e"]?.asInt()
+private fun ObjectNode.setEventId(eventId: Int) = this.put("e", eventId)
 private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let { CbEventCommand.entries[it] } ?: CbEventCommand.LIST
-
+private fun ObjectNode.setCommand(command: CbEventCommand) = this.put("c", command.id)
 private fun ObjectNode.getParticipantId() = this["id"]?.asInt()
 private fun ObjectNode.clearParticipantId() = this.remove("id")
