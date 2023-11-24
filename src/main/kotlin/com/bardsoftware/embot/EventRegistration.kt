@@ -37,7 +37,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
         }
         val registeredLabel =
           if (registeredTeam.isEmpty()) "из вашей команды пока никто"
-          else registeredTeam.map { it.participantName }.joinToString(separator = ", ")
+          else registeredTeam.map { it.participantName!!.escapeMarkdown() }.joinToString(separator = ", ")
         val btns =
           listOf(
             BtnData("Регистрация", node.put(CB_COMMAND, CbEventCommand.REGISTER.id).toString())

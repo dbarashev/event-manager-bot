@@ -31,7 +31,7 @@ CREATE TABLE Organizer(
 
 CREATE TABLE OrganizerManager(
     organizer_id INT NOT NULL REFERENCES Organizer,
-    user_id BIGINT NOT NULL REFERENCES TgUser(tg_userid)
+    user_id BIGINT NOT NULL REFERENCES TgUser(tg_userid) ON UPDATE CASCADE
 );
 
 CREATE TABLE EventSeries(

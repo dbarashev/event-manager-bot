@@ -48,7 +48,7 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
           val participantNames = participants.joinToString(separator = "\n") {
             """
               ${it.participantName!!.escapeMarkdown()}\, ${it.participantAge}\. 
-              Связь\: [${it.registrantUsername}](https://t.me/${it.registrantUsername}), [\+995551172098](tel:+995551172098)
+              Связь\: [${it.registrantUsername!!.escapeMarkdown()}](https://t.me/${it.registrantUsername}), [\+995551172098](tel:+995551172098)
               
               """.trimIndent()
           }.trim().ifBlank { "пока никто не зарегистрировался" }

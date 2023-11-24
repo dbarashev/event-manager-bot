@@ -38,7 +38,7 @@ fun processMessage(update: Update, sender: MessageSender) {
   chain(update, sender, ::userSessionProvider) {
     val tgUserId = this.userId
     val tgUsername = this.userName
-    val participant = getOrCreateParticipant(tgUserId, tgUsername)
+    val participant = getOrCreateParticipant(tgUserId, tgUsername, 1)
 
     participant.landing(this)
     participant.organizationManagementCallbacks(this)
@@ -47,7 +47,7 @@ fun processMessage(update: Update, sender: MessageSender) {
   }
 }
 
-fun getOrCreateParticipant(tgUserId: Long, tgUsername: String): ParticipantRecord =
+fun getOrCreateParticipant(tgUserId: Long, tgUsername: String, orgId: Int): ParticipantRecord =
   txn {
     val tgUserRecord = selectFrom(TGUSER).where(TGUSER.TG_USERID.eq(tgUserId)).fetchOne()
       ?: insertInto(TGUSER).columns(TGUSER.TG_USERID, TGUSER.TG_USERNAME).values(tgUserId, tgUsername)
@@ -57,11 +57,19 @@ fun getOrCreateParticipant(tgUserId: Long, tgUsername: String): ParticipantRecor
       ?: throw RuntimeException("Failed to fetch or add user record")
 
     selectFrom(PARTICIPANT).where(PARTICIPANT.USER_ID.eq(tgUserId)).fetchOne()
-      ?: insertInto(PARTICIPANT).columns(PARTICIPANT.USER_ID, PARTICIPANT.DISPLAY_NAME)
+      ?: run {
+        val participant = insertInto(PARTICIPANT).columns(PARTICIPANT.USER_ID, PARTICIPANT.DISPLAY_NAME)
           .values(tgUserId, tgUsername)
           .returning()
           .fetchOne()
-      ?: throw RuntimeException("Failed to fetch or add participant")
+        getDefaultSeries(orgId)?.let {
+          insertInto(EVENTSERIESSUBSCRIPTION)
+            .columns(EVENTSERIESSUBSCRIPTION.SERIES_ID, EVENTSERIESSUBSCRIPTION.PARTICIPANT_ID)
+            .values(it.id!!, participant!!.id!!)
+            .execute()
+        }
+        participant
+      } ?: throw RuntimeException("Failed to fetch or add participant")
   }
 
 fun findParticipant(id: Int): ParticipantRecord? = db {

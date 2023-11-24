@@ -399,7 +399,7 @@ data class DialogState(val state: Int, val data: String?) {
   }
 }
 
-fun User.displayName(): String = "${this.firstName} ${this.lastName}"
+fun User.displayName(): String = "${this.firstName} ${this.lastName ?: ""}"
 
 interface UserSessionStorage {
   val state: DialogState?
