@@ -18,7 +18,6 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       return@onCallback
     }
 
-    tg.userSession.reset()
     val event = node.getEventId()?.let(::getEventRecord) ?: run {
       // -------------------------------------------------------------------------
       tg.reply("Ваши события:",
@@ -41,7 +40,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
           else registeredTeam.map { it.participantName }.joinToString(separator = ", ")
         val btns =
           listOf(
-            BtnData("Зарегистрироваться", node.put(CB_COMMAND, CbEventCommand.REGISTER.id).toString())
+            BtnData("Регистрация", node.put(CB_COMMAND, CbEventCommand.REGISTER.id).toString())
           ) + if (registeredTeam.isNotEmpty()) { listOf(
             BtnData("Отменить регистрацию полностью", node.put(CB_COMMAND, CbEventCommand.UNREGISTER.id).toString())
           )} else {
@@ -51,41 +50,11 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
         tg.reply(event.formatDescription(registeredLabel), isMarkdown = true, buttons = btns + returnToEventRegistrationLanding(),
           isInplaceUpdate = true)
         // -------------------------------------------------------------------------
+        tg.userSession.reset()
       }
 
       CbEventCommand.REGISTER -> {
-        node.getParticipantId()?.let(::findParticipant)?.let {otherParticipant ->
-          node.clearParticipantId()
-          event.register(participant, otherParticipant)
-          // -------------------------------------------------------------------------
-          tg.reply("Зарегистрировали: ${otherParticipant.displayName}",
-            buttons = participant.getEventButtons(node),
-            maxCols = 1,
-            isInplaceUpdate = true
-          )
-          // -------------------------------------------------------------------------
-
-          return@onCallback
-        }
-        participant.teamMembers().let {
-          if (it.isEmpty()) {
-            event.register(participant, participant)
-            // -------------------------------------------------------------------------
-            tg.reply("Вы зарегистрированы!", buttons = participant.getEventButtons(node), maxCols = 1, isInplaceUpdate = true)
-            // -------------------------------------------------------------------------
-          } else {
-            // -------------------------------------------------------------------------
-            tg.reply("Кого вы будете регистрировать?",
-              buttons = listOf(
-                BtnData("Себя", node.put("id", participant.id).toString())) + it.map { member ->
-                  BtnData("${member.displayName}, ${member.age}", node.put("id", member.id).toString())
-                },
-              maxCols = 4,
-              isInplaceUpdate = true
-            )
-            // -------------------------------------------------------------------------
-          }
-        }
+        registerParticipant(node, event, participant, tg)
       }
       CbEventCommand.UNREGISTER -> {
         db {
@@ -100,9 +69,19 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
         // -------------------------------------------------------------------------
         tg.reply("Регистрация отменена", buttons = participant.getEventButtons(node), maxCols = 1, isInplaceUpdate = true)
         // -------------------------------------------------------------------------
+        tg.userSession.reset()
       }
     }
   }
+}
+
+private fun registerParticipant(
+  node: ObjectNode,
+  event: EventviewRecord,
+  registrant: ParticipantRecord,
+  tg: ChainBuilder
+) {
+  RegistrationFlow(createStorageApiProd(tg), createOutputApiProd(tg, node)).process(event, registrant, node)
 }
 
 fun getEventRecord(id: Int): EventviewRecord? =
@@ -163,6 +142,4 @@ fun returnToEventRegistrationLanding() =
 private fun ObjectNode.getEventId() = this["e"]?.asInt()
 private fun ObjectNode.setEventId(eventId: Int) = this.put("e", eventId)
 private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let { CbEventCommand.entries[it] } ?: CbEventCommand.LIST
-private fun ObjectNode.setCommand(command: CbEventCommand) = this.put("c", command.id)
-private fun ObjectNode.getParticipantId() = this["id"]?.asInt()
-private fun ObjectNode.clearParticipantId() = this.remove("id")
+internal fun ObjectNode.setCommand(command: CbEventCommand) = this.put("c", command.id)
