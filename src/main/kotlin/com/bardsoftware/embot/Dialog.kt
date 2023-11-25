@@ -7,7 +7,7 @@ import com.bardsoftware.libbotanique.escapeMarkdown
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.michaelbull.result.Result
-import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 enum class DialogDataType {
@@ -42,9 +42,21 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
   private fun replyStep(dialogData: ObjectNode, stepIdx: Int) {
     dialogData.put("next_field", steps[stepIdx].fieldName)
     tg.userSession.save(this.id, dialogData.toString())
-    tg.reply(steps[stepIdx].question, buttons = listOf(
-      BtnData("<< Выйти", callbackData = exitPayload)
-    ))
+    val prefixButtons = dialogData[steps[stepIdx].fieldName]?.let {
+      listOf(BtnData("Пропустить", callbackData = json {
+        setSection(CbSection.DIALOG)
+        setDialogId(this@Dialog.id)
+        put("next_field", stepIdx)
+        put("c", true)
+      }))
+    } ?: emptyList()
+    val defaultValue = dialogData[steps[stepIdx].fieldName]?.asText()?.let {
+      "[${it}]"
+    } ?: ""
+
+    tg.reply("${steps[stepIdx].question} $defaultValue",
+      buttons = prefixButtons + listOf(BtnData("<< Выйти", callbackData = exitPayload))
+    )
 
   }
   fun createDialog(confirmQuestion: String, onSuccess: (ObjectNode) -> Unit) {
@@ -58,12 +70,20 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
         }
       }
       if (node.getDialogId() == this@Dialog.id) {
+        node["next_field"]?.asInt()?.let { expectedFieldIdx ->
+          if (node["c"]?.asBoolean() == true) {
+            // Skip this field
+            val dialogData = tg.userSession.state?.asJson() ?: OBJECT_MAPPER.createObjectNode()
+            nextStep(confirmQuestion, expectedFieldIdx, dialogData)
+          }
+          return@onCallback
+        }
         if (node["c"]?.asBoolean() == true) {
           val eventData = tg.userSession.state?.asJson() ?: OBJECT_MAPPER.createObjectNode()
           onSuccess(eventData)
           tg.reply("Готово!", buttons = listOf(
             BtnData("<< Назад", callbackData = exitPayload)
-          ))
+          ), isInplaceUpdate = true)
         }
       }
     }
@@ -87,28 +107,32 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
         return@onInput
       }
       dialogData.put(expectedStep.fieldName, msg)
-      if (expectedStepIdx + 1 < steps.size) {
-        replyStep(dialogData, expectedStepIdx + 1)
-      } else {
-        tg.userSession.save(OrgManagerCommand.EVENT_ADD.id, dialogData.toString())
-        val summary = steps.joinToString(separator = "\n") {
-          "*${it.shortLabel.escapeMarkdown()}*\\: ${dialogData[it.fieldName]?.asText()?.escapeMarkdown() ?: "\\-"}"
-        }
-        tg.reply("""${confirmQuestion.escapeMarkdown()}
+      nextStep(confirmQuestion, expectedStepIdx, dialogData)
+    }
+  }
+
+  private fun nextStep(confirmQuestion: String, expectedStepIdx: Int, dialogData: ObjectNode) {
+    if (expectedStepIdx + 1 < steps.size) {
+      replyStep(dialogData, expectedStepIdx + 1)
+    } else {
+      tg.userSession.save(OrgManagerCommand.EVENT_ADD.id, dialogData.toString())
+      val summary = steps.joinToString(separator = "\n") {
+        "*${it.shortLabel.escapeMarkdown()}*\\: ${dialogData[it.fieldName]?.asText()?.escapeMarkdown() ?: "\\-"}"
+      }
+      tg.reply("""${confirmQuestion.escapeMarkdown()}
         |
         |$summary
       """.trimMargin(),
-          buttons = listOf(
-            BtnData("Да", callbackData = json {
-              setSection(CbSection.MANAGER)
-              setDialogId(this@Dialog.id)
-              put("c", true)
-            }),
-            BtnData("Отменить", callbackData = exitPayload)
-          ),
-          isMarkdown = true
-        )
-      }
+        buttons = listOf(
+          BtnData("Да", callbackData = json {
+            setSection(CbSection.MANAGER)
+            setDialogId(this@Dialog.id)
+            put("c", true)
+          }),
+          BtnData("Отменить", callbackData = exitPayload)
+        ),
+        isMarkdown = true
+      )
     }
   }
 }
@@ -121,7 +145,8 @@ fun ObjectNode.getDialogId() = this["d"]?.asInt()
 private fun ObjectNode.setDialogId(dialogId: Int) = this.put("d", dialogId)
 
 fun String.toDate() =
-  Result.runCatching { LocalDate.parse(this@toDate, DateTimeFormatter.ISO_DATE) }
+  Result.runCatching { LocalDateTime.parse(this@toDate.trim().replace(' ', 'T').also { println(it) },
+    DateTimeFormatter.ISO_DATE_TIME) }
 
 fun json(prototype: ObjectNode = jacksonObjectMapper().createObjectNode(),
          builder: ObjectNode.() -> Unit) = prototype.deepCopy().apply(builder).toString()

@@ -25,7 +25,7 @@ const val CB_EVENT = "e"
 const val CB_COMMAND = "c"
 
 enum class CbSection {
-  LANDING, MANAGER, PARTICIPANT, TEAM, EVENTS;
+  LANDING, MANAGER, PARTICIPANT, TEAM, EVENTS, SETTINGS, DIALOG;
 
   val id get() = this.ordinal
 }
@@ -44,6 +44,8 @@ fun processMessage(update: Update, sender: MessageSender) {
     participant.organizationManagementCallbacks(this)
     participant.eventRegistrationCallbacks(this)
     participant.teamManagementCallbacks(this)
+    participant.settingsModule(this)
+
   }
 }
 

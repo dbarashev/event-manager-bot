@@ -48,7 +48,7 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
           val participantNames = participants.joinToString(separator = "\n") {
             """
               ${it.participantName!!.escapeMarkdown()}\, ${it.participantAge}\. 
-              Связь\: [${it.registrantUsername!!.escapeMarkdown()}](https://t.me/${it.registrantUsername}), [\+995551172098](tel:+995551172098)
+              Связь\: [${it.registrantUsername!!.escapeMarkdown()}](https://t.me/${it.registrantUsername}), [${it.registrantPhone!!.escapeMarkdown()}](tel:${it.registrantPhone!!.escapeMarkdown()})
               
               """.trimIndent()
           }.trim().ifBlank { "пока никто не зарегистрировался" }
@@ -98,8 +98,8 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
       setCommand(OrgManagerCommand.LANDING)
     }
     step("title", DialogDataType.TEXT, "Название", "Название события:")
-    step("start", DialogDataType.DATE, "Дата", "Дата события [YYYY-MM-DD]:",
-      "Введите дату в формате YYYY-MM-DD. Например, 2023-11-21.")
+    step("start", DialogDataType.DATE, "Дата", "Дата события [YYYY-MM-DD HH:mm]:",
+      "Введите дату и время начала в формате YYYY-MM-DD HH:mm. Например, 2023-11-21 09:00.")
     step("limit", DialogDataType.INT, "Участников (max)", "Максимальное количество участников:")
     confirm("Создаём?") {json ->
       if (createEvent(json)) Ok(json) else Err("Что-то пошло не так")
@@ -156,7 +156,7 @@ fun createEvent(eventData: ObjectNode): Boolean =
     val seriesId = eventData["series_id"]?.asInt() ?: return@db false
     val limit = eventData["limit"]?.asInt()
     insertInto(EVENT, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID, EVENT.PARTICIPANT_LIMIT)
-      .values(title, start.atStartOfDay(), seriesId, limit)
+      .values(title, start, seriesId, limit)
       .execute()
     true
   }

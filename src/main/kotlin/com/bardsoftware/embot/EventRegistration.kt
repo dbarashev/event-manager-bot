@@ -29,28 +29,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
 
     when(node.getCommand()) {
       CbEventCommand.LIST -> {
-        val registeredTeam = db {
-          selectFrom(EVENTTEAMREGISTRATIONVIEW).where(
-            EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(participant.userId)
-              .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(event.id))
-          ).toList()
-        }
-        val registeredLabel =
-          if (registeredTeam.isEmpty()) "из вашей команды пока никто"
-          else registeredTeam.map { it.participantName!!.escapeMarkdown() }.joinToString(separator = ", ")
-        val btns =
-          listOf(
-            BtnData("Регистрация", node.put(CB_COMMAND, CbEventCommand.REGISTER.id).toString())
-          ) + if (registeredTeam.isNotEmpty()) { listOf(
-            BtnData("Отменить регистрацию полностью", node.put(CB_COMMAND, CbEventCommand.UNREGISTER.id).toString())
-          )} else {
-            emptyList()
-          }
-        // -------------------------------------------------------------------------
-        tg.reply(event.formatDescription(registeredLabel), isMarkdown = true, buttons = btns + returnToEventRegistrationLanding(),
-          isInplaceUpdate = true)
-        // -------------------------------------------------------------------------
-        tg.userSession.reset()
+        showEvent(participant, event, node, tg)
       }
 
       CbEventCommand.REGISTER -> {
@@ -75,6 +54,41 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
   }
 }
 
+fun showEvent(
+  participant: ParticipantRecord,
+  event: EventviewRecord,
+  node: ObjectNode,
+  tg: ChainBuilder,
+  isInplaceUpdate: Boolean = true
+) {
+  val registeredTeam = db {
+    selectFrom(EVENTTEAMREGISTRATIONVIEW).where(
+      EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(participant.userId)
+        .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(event.id))
+    ).toList()
+  }
+  val registeredLabel =
+    if (registeredTeam.isEmpty()) "из вашей команды пока никто"
+    else registeredTeam.map { it.participantName!!.escapeMarkdown() }.joinToString(separator = ", ")
+  val btns =
+    listOf(
+      BtnData("Регистрация", node.put(CB_COMMAND, CbEventCommand.REGISTER.id).toString())
+    ) + if (registeredTeam.isNotEmpty()) {
+      listOf(
+        BtnData("Отменить регистрацию полностью", node.put(CB_COMMAND, CbEventCommand.UNREGISTER.id).toString())
+      )
+    } else {
+      emptyList()
+    }
+  // -------------------------------------------------------------------------
+  tg.reply(
+    event.formatDescription(registeredLabel), isMarkdown = true, buttons = btns + returnToEventRegistrationLanding(),
+    isInplaceUpdate = isInplaceUpdate
+  )
+  // -------------------------------------------------------------------------
+  tg.userSession.reset()
+}
+
 private fun registerParticipant(
   node: ObjectNode,
   event: EventviewRecord,
@@ -90,7 +104,12 @@ fun getEventRecord(id: Int): EventviewRecord? =
   }
 fun getAvailableEvents(participant: ParticipantRecord): List<EventRecord> =
   db {
-    selectFrom(EVENT).toList()
+    select(EVENT.ID, EVENT.TITLE, EVENT.START, EVENT.PARTICIPANT_LIMIT).from(EVENT.join(EVENTSERIES).on(EVENT.SERIES_ID.eq(EVENTSERIES.ID))
+      .join(EVENTSERIESSUBSCRIPTION).on(EVENTSERIESSUBSCRIPTION.SERIES_ID.eq(EVENTSERIES.ID)))
+      .where(EVENTSERIESSUBSCRIPTION.PARTICIPANT_ID.eq(participant.id)).map {
+        EventRecord(id = it.component1(), title = it.component2(), start = it.component3(),
+          participantLimit = it.component4())
+    }.toList()
   }
 
 fun ParticipantRecord.getEventButtons(srcNode: ObjectNode) =
@@ -110,7 +129,8 @@ fun EventviewRecord.formatDescription(registeredParticipantsMdwn: String) =
     |${seriesTitle?.escapeMarkdown() ?: ""}
     | ${"\\-".repeat(20)}
     | *Организаторы*\: ${organizerTitle?.escapeMarkdown() ?: ""}
-    | *Дата*\: ${start.toString().escapeMarkdown()}
+    | *Дата*\: ${start!!.toLocalDate().toString().escapeMarkdown()}
+    | *Время*\: ${start!!.toLocalTime().toString().escapeMarkdown()}
     | *Max\. участников*\: ${participantLimit?.toString() ?: "\\-"}
     | 
     | *Зарегистрированы*\: 

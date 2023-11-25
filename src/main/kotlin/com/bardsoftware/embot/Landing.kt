@@ -5,6 +5,7 @@ import com.bardsoftware.libbotanique.BtnData
 import com.bardsoftware.libbotanique.ChainBuilder
 import com.bardsoftware.libbotanique.OBJECT_MAPPER
 import com.bardsoftware.libbotanique.displayName
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
 fun ParticipantRecord.landing(tg: ChainBuilder) {
   tg.onCallback {node ->
@@ -25,10 +26,17 @@ fun ParticipantRecord.landing(tg: ChainBuilder) {
   }
 
   tg.onCommand("start") {
-    regularLanding(tg, isInplaceUpdate = false)
+    if (!deepLinkLanding(tg)) {
+      regularLanding(tg, isInplaceUpdate = false)
+    }
   }
-
 }
+
+fun ParticipantRecord.deepLinkLanding(tg: ChainBuilder) =
+  tg.messageText.removePrefix("/start").trim().toIntOrNull()?.let(::getEventRecord)?.let {event ->
+    showEvent(this, event, jacksonObjectMapper().createObjectNode(), tg, isInplaceUpdate = false)
+    true
+  } ?: false
 
 fun regularLanding(tg: ChainBuilder, isInplaceUpdate: Boolean) {
   val managedOrgs = getManagedOrganizations(tg.userId)
@@ -37,14 +45,18 @@ fun regularLanding(tg: ChainBuilder, isInplaceUpdate: Boolean) {
   } else {
     tg.reply("Привет ${tg.fromUser?.displayName()}!",
       buttons = listOf(
-        BtnData("Организатор >>", callbackData = OBJECT_MAPPER.createObjectNode().apply {
+        BtnData("Организатор >>", callbackData = json {
           setSection(CbSection.MANAGER)
-        }.toString()),
-        BtnData("Участник >>", callbackData = OBJECT_MAPPER.createObjectNode().apply {
+        }),
+        BtnData("Участник >>", callbackData = json {
           setSection(CbSection.PARTICIPANT)
-        }.toString())
+        }),
+        BtnData("Настройки >>", callbackData = json {
+          setSection(CbSection.SETTINGS)
+        })
       ),
-      isInplaceUpdate = isInplaceUpdate
+      isInplaceUpdate = isInplaceUpdate,
+      maxCols = 2
     )
   }
 }
