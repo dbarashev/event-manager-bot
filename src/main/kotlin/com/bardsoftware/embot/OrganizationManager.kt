@@ -14,7 +14,7 @@ import com.github.michaelbull.result.Err
 import com.github.michaelbull.result.Ok
 
 enum class OrgManagerCommand {
-  LANDING, EVENT_INFO, EVENT_ADD, EVENT_DELETE;
+  LANDING, EVENT_INFO, EVENT_ADD, EVENT_DELETE, EVENT_EDIT;
 
   val id get() = ordinal + 200
 }
@@ -57,6 +57,9 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
             |
             |Итого ${participants.size}""".trimMargin()),
             buttons = listOf(
+              BtnData("Редактировать...", callbackData = json(node) {
+                setCommand(OrgManagerCommand.EVENT_EDIT)
+              }),
               BtnData("Удалить", callbackData = json(node) {
                 setCommand(OrgManagerCommand.EVENT_DELETE)
               }),
@@ -69,6 +72,9 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
       OrgManagerCommand.EVENT_ADD -> {
         // This is handled in the dialog code
       }
+      OrgManagerCommand.EVENT_EDIT -> {
+        // This is handled in the dialog code
+      }
       OrgManagerCommand.EVENT_DELETE -> {
         node.getEventId()?.let {
           deleteEvent(node)
@@ -77,22 +83,40 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
       }
     }
   }
+  eventDialog(tg, titleMdwn = "Создаём новое событие\\.", OrgManagerCommand.EVENT_ADD) { input ->
+    jacksonObjectMapper().createObjectNode().apply {
+      put("org_id", input.getOrganizationId())
+      put("series_id", getDefaultSeries(input.getOrganizationId()!!)!!.id)
+    }
+  }
+  eventDialog(tg, titleMdwn = "Редактируем событие\\.", OrgManagerCommand.EVENT_EDIT) { input ->
+    input.getEventId()?.let(::getEventRecord)?.let { event ->
+      jacksonObjectMapper().createObjectNode().apply {
+        put("org_id", input.getOrganizationId())
+        put("series_id", getDefaultSeries(input.getOrganizationId()!!)!!.id)
+        put("event_id", event.id)
+        put("title", event.title)
+        put("start", event.start.toString())
+        put("limit", event.participantLimit)
+      }
+    } ?: input
+  }
+}
+
+fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand, setupCode: (ObjectNode)->ObjectNode) {
   tg.dialog(
-    id = OrgManagerCommand.EVENT_ADD.id,
+    id = command.id,
     intro = """
-      Создаём новое событие\. 
+      $titleMdwn
       
       _Процесс можно прервать в любой момент кнопкой "Отменить"_
       """.trimIndent()) {
 
     trigger = json {
       setSection(CbSection.MANAGER)
-      setCommand(OrgManagerCommand.EVENT_ADD)
+      setCommand(command)
     }
-    setup = { input -> jacksonObjectMapper().createObjectNode().apply {
-      put("org_id", input.getOrganizationId())
-      put("series_id", getDefaultSeries(input.getOrganizationId()!!)!!.id)
-    }}
+    setup = setupCode
     exitPayload = json {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.LANDING)
@@ -122,6 +146,7 @@ fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder, organizerId: Int, 
     BtnData(eventRecord.title!!, OBJECT_MAPPER.createObjectNode().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_INFO)
+      setOrganizationId(organizerId)
       setEventId(eventRecord.id!!)
     }.toString())
   }.toList()
@@ -155,9 +180,19 @@ fun createEvent(eventData: ObjectNode): Boolean =
     val start = eventData["start"]?.asText()?.toDate()?.getOrNull() ?: return@db false
     val seriesId = eventData["series_id"]?.asInt() ?: return@db false
     val limit = eventData["limit"]?.asInt()
-    insertInto(EVENT, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID, EVENT.PARTICIPANT_LIMIT)
-      .values(title, start, seriesId, limit)
-      .execute()
+    eventData["event_id"]?.asInt()?.let {eventId ->
+     update(EVENT)
+       .set(EVENT.TITLE, title)
+       .set(EVENT.START, start)
+       .set(EVENT.SERIES_ID, seriesId)
+       .set(EVENT.PARTICIPANT_LIMIT, limit)
+       .where(EVENT.ID.eq(eventId))
+       .execute()
+    } ?: run {
+      insertInto(EVENT, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID, EVENT.PARTICIPANT_LIMIT)
+        .values(title, start, seriesId, limit)
+        .execute()
+    }
     true
   }
 

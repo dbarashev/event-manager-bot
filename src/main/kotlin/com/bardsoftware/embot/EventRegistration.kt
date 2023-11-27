@@ -29,7 +29,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
 
     when(node.getCommand()) {
       CbEventCommand.LIST -> {
-        showEvent(participant, event, node, tg)
+        showEvent(participant, event, tg)
       }
 
       CbEventCommand.REGISTER -> {
@@ -57,7 +57,6 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
 fun showEvent(
   participant: ParticipantRecord,
   event: EventviewRecord,
-  node: ObjectNode,
   tg: ChainBuilder,
   isInplaceUpdate: Boolean = true
 ) {
@@ -72,17 +71,27 @@ fun showEvent(
     else registeredTeam.map { it.participantName!!.escapeMarkdown() }.joinToString(separator = ", ")
   val btns =
     listOf(
-      BtnData("Регистрация", node.put(CB_COMMAND, CbEventCommand.REGISTER.id).toString())
+      BtnData("Регистрация", json {
+        setSection(CbSection.EVENTS)
+        setCommand(CbEventCommand.REGISTER)
+        setEventId(event.id!!)
+      })
     ) + if (registeredTeam.isNotEmpty()) {
       listOf(
-        BtnData("Отменить регистрацию полностью", node.put(CB_COMMAND, CbEventCommand.UNREGISTER.id).toString())
+        BtnData("Отменить регистрацию полностью", json {
+          setSection(CbSection.EVENTS)
+          setCommand(CbEventCommand.UNREGISTER)
+          setEventId(event.id!!)
+        })
       )
     } else {
       emptyList()
     }
   // -------------------------------------------------------------------------
   tg.reply(
-    event.formatDescription(registeredLabel), isMarkdown = true, buttons = btns + returnToEventRegistrationLanding(),
+    event.formatDescription(registeredLabel),
+    buttons = btns + returnToEventRegistrationLanding(),
+    isMarkdown = true,
     isInplaceUpdate = isInplaceUpdate
   )
   // -------------------------------------------------------------------------

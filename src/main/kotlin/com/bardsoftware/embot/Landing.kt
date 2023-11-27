@@ -34,7 +34,7 @@ fun ParticipantRecord.landing(tg: ChainBuilder) {
 
 fun ParticipantRecord.deepLinkLanding(tg: ChainBuilder) =
   tg.messageText.removePrefix("/start").trim().toIntOrNull()?.let(::getEventRecord)?.let {event ->
-    showEvent(this, event, jacksonObjectMapper().createObjectNode(), tg, isInplaceUpdate = false)
+    showEvent(this, event, tg, isInplaceUpdate = false)
     true
   } ?: false
 
