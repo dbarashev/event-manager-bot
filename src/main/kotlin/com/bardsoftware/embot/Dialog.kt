@@ -65,7 +65,7 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
     } ?: ""
 
     tg.reply("${steps[stepIdx].question} $defaultValue",
-      buttons = prefixButtons + listOf(BtnData("<< Выйти", callbackData = exitPayload ?: ""))
+      buttons = prefixButtons + listOf(BtnData("<< Выйти", callbackData = exitPayload ?: "{}"))
     )
 
   }

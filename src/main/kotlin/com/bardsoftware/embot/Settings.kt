@@ -6,7 +6,9 @@ import com.bardsoftware.libbotanique.BtnData
 import com.bardsoftware.libbotanique.ChainBuilder
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.github.michaelbull.result.Ok
 import com.github.michaelbull.result.Result
+import com.github.michaelbull.result.andThen
 import com.github.michaelbull.result.mapError
 
 enum class SettingsCommand {
@@ -74,7 +76,11 @@ fun ParticipantRecord.settingsModule(tg: ChainBuilder) {
     step("name", DialogDataType.TEXT, "Имя", "Ваше имя:")
     step("phone", DialogDataType.TEXT, "Телефон", "Контактный телефон:")
     confirm("Сохранить изменения?") {json ->
-      applySettings(json).mapError { " Что-то пошло не так" }
+      applySettings(json).andThen {
+        tg.userSession.reset()
+        tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
+        Ok(Unit)
+      }.mapError { " Что-то пошло не так" }
     }
   }
 
@@ -95,3 +101,5 @@ private fun ObjectNode.setCommand(cmd: SettingsCommand) = this.put("c", cmd.id)
 
 private fun ObjectNode.getChangeField() = this["f"]?.asInt()?.let(SettingsField.entries::get)
 private fun ObjectNode.setChangeField(field: SettingsField) = this.put("f", field.ordinal)
+
+fun ParticipantRecord.hasMissingSettings() = age == null || phone == null

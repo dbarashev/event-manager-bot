@@ -22,6 +22,7 @@ data class RegistrationFlowStorageApi(
 data class RegistrationFlowOutputApi(
   val sendWhomAdd: (candidates: List<ParticipantRecord>, btns: List<BtnData>) -> Unit,
   val sendRegistered: (participant: ParticipantRecord) -> Unit,
+  val sendRedirectToSettings: (participant: ParticipantRecord) -> Unit,
   val close: () -> Unit
 )
 
@@ -36,7 +37,11 @@ class RegistrationFlow(
         storageApi.insertParticipants(participantIds, event, subscriptionId)
       }
       storageApi.close()
-      outputApi.close()
+      if (registrant.hasMissingSettings()) {
+        outputApi.sendRedirectToSettings(registrant)
+      } else {
+        outputApi.close()
+      }
       return
     }
 
@@ -115,6 +120,17 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
         maxCols = 1,
         isInplaceUpdate = true
       )
+    },
+    sendRedirectToSettings = { participant ->
+      tg.reply("""Нам нужна ваша контактная информация. Нажмите кнопку "Настройки" чтобы её ввести.""", buttons = listOf(
+        BtnData("Настройки >>", callbackData = json {
+          setSection(CbSection.SETTINGS)
+        }),
+        BtnData("<< К событиям", callbackData = json {
+          setSection(CbSection.EVENTS)
+          setCommand(CbEventCommand.LIST)
+        })
+      ), isInplaceUpdate = true)
     }
   )
 fun createStorageApiProd(tg: ChainBuilder): RegistrationFlowStorageApi =
