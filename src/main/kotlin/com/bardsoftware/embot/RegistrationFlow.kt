@@ -42,36 +42,35 @@ class RegistrationFlow(
 
     val allMembers = storageApi.getTeam(registrant)
 
-    if (allMembers.isEmpty()) {
-      val subscriptionId = storageApi.getSubscriptionId(event, registrant) ?: return
-      storageApi.insertParticipants(listOf(registrant.id!!), event, subscriptionId)
-      outputApi.sendRegistered(registrant)
-    } else {
-      val candidateIds = storageApi.getCandidateIdList()?.toMutableList() ?: mutableListOf()
-      payload.getParticipantId()?.let {
-        candidateIds.add(it)
-        storageApi.setCandidateIdList(candidateIds)
-        payload.clearParticipantId()
-      }
-      val candidates = storageApi.getAllParticipants(candidateIds)
-      // -------------------------------------------------------------------------
-      val remainingMembers = allMembers.filter { member  -> candidates.find { it.id == member.id } == null }
-      val buttons =
-        listOf(
-          BtnData("Себя", callbackData = json(payload) {
-            put("id", registrant.id)
-          })
-        ) + remainingMembers.map { member ->
-          BtnData("${member.displayName}, ${member.age}", callbackData = json(payload) {
-            put("id", member.id)
-          })
-        }.toList() + listOf(BtnData("Всё, поехали! >>", callbackData = json(payload) {
-          setConfirmation()
-        }))
-      outputApi.sendWhomAdd(candidates, buttons)
-      // -------------------------------------------------------------------------
+    val candidateIds = storageApi.getCandidateIdList()?.toMutableList() ?: mutableListOf()
+    payload.getParticipantId()?.let {
+      candidateIds.add(it)
+      storageApi.setCandidateIdList(candidateIds)
+      payload.clearParticipantId()
     }
-
+    val candidates = storageApi.getAllParticipants(candidateIds)
+    // -------------------------------------------------------------------------
+    val remainingMembers = allMembers.filter { member  -> candidates.find { it.id == member.id } == null }
+    val buttons =
+      listOf(
+        BtnData("Новый участник...", callbackData = json(payload) {
+          setSection(CbSection.TEAM)
+          setCommand(CbTeamCommand.ADD_DIALOG)
+          set<ObjectNode>("esc", payload)
+        })
+      ) + remainingMembers.map { member ->
+        BtnData("${member.displayName}, ${member.age}", callbackData = json(payload) {
+          put("id", member.id)
+        })
+      }.toList() + listOf(
+        BtnData("Себя", callbackData = json(payload) {
+          put("id", registrant.id)
+        })
+      ) + listOf(BtnData("OK >>", callbackData = json(payload) {
+        setConfirmation()
+      }))
+    outputApi.sendWhomAdd(candidates, buttons)
+      // -------------------------------------------------------------------------
   }
 }
 
@@ -96,13 +95,24 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
       val names = candidates.joinToString(separator = ",") {
         it.displayName!!
       }
-      tg.reply(
+      val msg = if (names.isNotBlank()) {
+        """Будут зарегистрированы: $names
+          |
+          |Чтобы завершить регистрацию, нажмите кнопку ОК.
+        """.trimMargin()
+      } else {
         """
-        Будут зарегистрированы: $names
-        
-        Кого добавить?""".trimIndent(),
+          Выберите одного или нескольких человек для регистрации. 
+          Выбирайте только тех, кто действительно будет участвовать. 
+          Если нужно, создайте нового участника, например ребенка, кнопкой "Новый участник..."
+        """.trimIndent()
+      }
+      tg.reply(
+        """$msg
+        |
+        |Кого добавить?""".trimMargin(),
         buttons = buttons,
-        maxCols = 3,
+        maxCols = 1,
         isInplaceUpdate = true
       )
     }
@@ -159,4 +169,5 @@ private fun ObjectNode.hasConfirmation() = this["y"]?.asBoolean() ?: false
 private fun ObjectNode.setConfirmation() = this.put("y", true)
 
 private fun ObjectNode.getParticipantId() = this["id"]?.asInt()
+private fun ObjectNode.setParticipantId(id: Int) = this.put("id", id)
 private fun ObjectNode.clearParticipantId() = this.remove("id")

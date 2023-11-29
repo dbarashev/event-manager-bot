@@ -44,14 +44,19 @@ fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
       
       _Процесс можно прервать в любой момент кнопкой "Отменить"_
       """.trimIndent()) {
+
     trigger = json {
       setSection(CbSection.TEAM)
       setCommand(CbTeamCommand.ADD_DIALOG)
     }
-    exitPayload = json {
-      setSection(CbSection.TEAM)
-      setCommand(CbTeamCommand.LANDING)
+    setup = {
+      exitPayload = it.get("esc")?.toString() ?: json {
+        setSection(CbSection.TEAM)
+        setCommand(CbTeamCommand.LANDING)
+      }
+      it
     }
+
     step("name", DialogDataType.TEXT, "Имя", "Как зовут товарища?")
     step("age", DialogDataType.INT, "Возраст", "Сколько ему/ей лет? [просто число]",
       validatorReply = "Введите неотрицательное число арабскими цифрами. Например: 13"
@@ -66,8 +71,10 @@ fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
         insertInto(PARTICIPANTTEAM).columns(PARTICIPANTTEAM.LEADER_ID, PARTICIPANTTEAM.FOLLOWER_ID)
           .values(participant.id, newParticipant!!.id).execute()
       }
+      tg.reply("Товарищ записан в вашу команду. Теперь вы можете регистрировать его во всех доступных вам событиях",
+        buttons = listOf(escapeButton)
+      )
       tg.userSession.reset()
-      tg.reply("Товарищ записан в вашу команду. Теперь вы можете регистрировать его во всех доступных вам событиях")
       return@confirm Ok(json)
     }
   }
@@ -103,4 +110,4 @@ fun ParticipantRecord.teamMembers(): List<ParticipantRecord> =
 
 
 private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let {CbTeamCommand.entries[it]} ?: CbTeamCommand.LANDING
-private fun ObjectNode.setCommand(command: CbTeamCommand) = this.put("c", command.id)
+fun ObjectNode.setCommand(command: CbTeamCommand) = this.put("c", command.id)

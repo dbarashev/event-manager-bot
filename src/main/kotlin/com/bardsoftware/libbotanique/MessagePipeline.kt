@@ -341,6 +341,10 @@ fun chain(update: Update,
           when (reply) {
             is SendMessage -> {
               println("Failed to send message to ${reply.chatId}")
+              println("""Message:
+                |
+                |$reply
+              """.trimMargin())
               sender.send(
                 SendMessage(
                   reply.chatId,
@@ -383,12 +387,13 @@ fun (ArrayNode).item(builder: ObjectNode.() -> Unit) {
   this.add(OBJECT_MAPPER.createObjectNode().also(builder))
 }
 
+fun String.asJson() = jacksonObjectMapper().readTree(this) as? ObjectNode
 val OBJECT_MAPPER = ObjectMapper()
 
 data class DialogState(val state: Int, val data: String?) {
   fun asJson(): ObjectNode? {
     try {
-      return jacksonObjectMapper().readTree(data) as? ObjectNode
+      return data?.asJson()
     } catch (ex: JsonParseException) {
       println("""Failed to parse:
         |$data

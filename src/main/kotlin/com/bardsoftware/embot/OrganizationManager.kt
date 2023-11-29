@@ -116,10 +116,12 @@ fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand,
       setSection(CbSection.MANAGER)
       setCommand(command)
     }
-    setup = setupCode
-    exitPayload = json {
-      setSection(CbSection.MANAGER)
-      setCommand(OrgManagerCommand.LANDING)
+    setup = {
+      exitPayload = json {
+        setSection(CbSection.MANAGER)
+        setCommand(OrgManagerCommand.LANDING)
+      }
+      setupCode(it)
     }
     step("title", DialogDataType.TEXT, "Название", "Название события:")
     step("start", DialogDataType.DATE, "Дата", "Дата события [YYYY-MM-DD HH:mm]:",

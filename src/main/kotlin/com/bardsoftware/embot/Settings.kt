@@ -66,11 +66,11 @@ fun ParticipantRecord.settingsModule(tg: ChainBuilder) {
       put("participant_id", participant.id)
       put("name", participant.displayName)
       put("phone", participant.phone)
+      exitPayload = json {
+        setSection(CbSection.SETTINGS)
+        setCommand(SettingsCommand.LANDING)
+      }
     }}
-    exitPayload = json {
-      setSection(CbSection.SETTINGS)
-      setCommand(SettingsCommand.LANDING)
-    }
     step("name", DialogDataType.TEXT, "Имя", "Ваше имя:")
     step("phone", DialogDataType.TEXT, "Телефон", "Контактный телефон:")
     confirm("Сохранить изменения?") {json ->

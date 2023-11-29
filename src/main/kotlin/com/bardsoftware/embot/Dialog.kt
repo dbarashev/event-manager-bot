@@ -1,9 +1,6 @@
 package com.bardsoftware.embot
 
-import com.bardsoftware.libbotanique.BtnData
-import com.bardsoftware.libbotanique.ChainBuilder
-import com.bardsoftware.libbotanique.OBJECT_MAPPER
-import com.bardsoftware.libbotanique.escapeMarkdown
+import com.bardsoftware.libbotanique.*
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.michaelbull.result.Result
@@ -25,9 +22,22 @@ data class DialogStep(
 data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
   private val steps = mutableListOf<DialogStep>()
 
-  var exitPayload: String = ""
+  var exitPayload: String?
+    set(value) {
+      value?.asJson()?.let {
+        tg.userSession.save(id, json(dialogData) {
+          set<ObjectNode>("esc", it)
+        })
+      }
+    }
+    get() = dialogData["esc"]?.toString()
+
+
+  val dialogData: ObjectNode get() = tg.userSession.state?.asJson() ?: jacksonObjectMapper().createObjectNode()
   var trigger: String = "{}"
   var setup: (ObjectNode) -> ObjectNode = { jacksonObjectMapper().createObjectNode() }
+
+  val escapeButton get() = BtnData("<< Назад", callbackData = exitPayload ?: "{}")
 
   fun step(id: String, type: DialogDataType, shortLabel: String, prompt: String, validatorReply: String = "") {
     steps.add(DialogStep(id, prompt, type, shortLabel, validatorReply))
@@ -55,10 +65,12 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
     } ?: ""
 
     tg.reply("${steps[stepIdx].question} $defaultValue",
-      buttons = prefixButtons + listOf(BtnData("<< Выйти", callbackData = exitPayload))
+      buttons = prefixButtons + listOf(BtnData("<< Выйти", callbackData = exitPayload ?: ""))
     )
 
   }
+
+
   fun createDialog(confirmQuestion: String, onSuccess: (ObjectNode) -> Unit) {
     tg.onCallback { node ->
       jacksonObjectMapper().readTree(trigger).let {
@@ -81,9 +93,6 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
         if (node["c"]?.asBoolean() == true) {
           val eventData = tg.userSession.state?.asJson() ?: OBJECT_MAPPER.createObjectNode()
           onSuccess(eventData)
-          tg.reply("Готово!", buttons = listOf(
-            BtnData("<< Назад", callbackData = exitPayload)
-          ), isInplaceUpdate = true)
         }
       }
     }
@@ -115,7 +124,7 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
     if (expectedStepIdx + 1 < steps.size) {
       replyStep(dialogData, expectedStepIdx + 1)
     } else {
-      tg.userSession.save(OrgManagerCommand.EVENT_ADD.id, dialogData.toString())
+      tg.userSession.save(this@Dialog.id, dialogData.toString())
       val summary = steps.joinToString(separator = "\n") {
         "*${it.shortLabel.escapeMarkdown()}*\\: ${dialogData[it.fieldName]?.asText()?.escapeMarkdown() ?: "\\-"}"
       }
@@ -129,7 +138,7 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
             setDialogId(this@Dialog.id)
             put("c", true)
           }),
-          BtnData("Отменить", callbackData = exitPayload)
+          BtnData("Отменить", callbackData = exitPayload ?: "{}")
         ),
         isMarkdown = true
       )
