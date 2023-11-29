@@ -12,9 +12,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.michaelbull.result.Err
 import com.github.michaelbull.result.Ok
+import com.github.michaelbull.result.Result
+import com.github.michaelbull.result.onFailure
 
 enum class OrgManagerCommand {
-  LANDING, EVENT_INFO, EVENT_ADD, EVENT_DELETE, EVENT_EDIT;
+  LANDING, EVENT_INFO, EVENT_ADD, EVENT_DELETE, EVENT_EDIT, EVENT_ARCHIVE;
 
   val id get() = ordinal + 200
 }
@@ -29,18 +31,7 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
     }
     when (node.getCommand()) {
       OrgManagerCommand.LANDING -> {
-        val orgs = getManagedOrganizations(this.userId!!)
-        when (orgs.size) {
-          0 -> {
-            tg.reply("У вас пока что нет организаторских прав")
-          }
-          1 -> {
-            this.eventOrganizerLanding(tg, orgs[0].get(ORGANIZER.ID)!!, orgs[0].get(ORGANIZER.TITLE)!!)
-          }
-          else -> {
-
-          }
-        }
+        eventOrganizerLanding(tg).onFailure { tg.reply(it) }
       }
       OrgManagerCommand.EVENT_INFO -> {
         node.getEventId()?.let(::getEventRecord)?.let { event ->
@@ -59,6 +50,9 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
             buttons = listOf(
               BtnData("Редактировать...", callbackData = json(node) {
                 setCommand(OrgManagerCommand.EVENT_EDIT)
+              }),
+              BtnData("Архивировать", callbackData = json(node) {
+                setCommand(OrgManagerCommand.EVENT_ARCHIVE)
               }),
               BtnData("Удалить", callbackData = json(node) {
                 setCommand(OrgManagerCommand.EVENT_DELETE)
@@ -79,6 +73,12 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
         node.getEventId()?.let {
           deleteEvent(node)
           tg.reply("Событие перемещено в помойку", buttons = listOf(createEscButton()), isInplaceUpdate = true)
+        }
+      }
+      OrgManagerCommand.EVENT_ARCHIVE -> {
+        node.getEventId()?.let {
+          archiveEvent(it)
+          eventOrganizerLanding(tg)
         }
       }
     }
@@ -136,6 +136,22 @@ fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand,
 fun EventviewRecord.getParticipants(): List<EventteamregistrationviewRecord> = db {
   selectFrom(EVENTTEAMREGISTRATIONVIEW).where(EVENTTEAMREGISTRATIONVIEW.ID.eq(this@getParticipants.id!!)).toList()
 }
+
+fun archiveEvent(eventId: Int) = txn {
+  update(EVENT).set(EVENT.IS_ARCHIVED, true).where(EVENT.ID.eq(eventId)).execute()
+}
+
+fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder): Result<Unit, String> {
+  val orgs = getManagedOrganizations(this.userId!!)
+  return when (orgs.size) {
+    0 -> Err("У вас пока что нет организаторских прав")
+    1 -> {
+      this.eventOrganizerLanding(tg, orgs[0].get(ORGANIZER.ID)!!, orgs[0].get(ORGANIZER.TITLE)!!)
+      Ok(Unit)
+    }
+    else -> Err("Кажется, у вас более одной организации. Пока что я не умею с этим работать (")
+  }
+}
 fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder, organizerId: Int, organizerTitle: String) {
   val eventAddBtns = listOf(
     BtnData("Добавить событие", callbackData = OBJECT_MAPPER.createObjectNode().apply {
@@ -169,7 +185,10 @@ fun getManagedOrganizations(tgUserId: Long) = db {
 }
 
 fun getAllEvents(organizerId: Int) = db {
-  selectFrom(EVENTVIEW).where(EVENTVIEW.ORGANIZER_ID.eq(organizerId)).toList()
+  selectFrom(EVENTVIEW)
+    .where(EVENTVIEW.ORGANIZER_ID.eq(organizerId)).andNot(EVENTVIEW.IS_ARCHIVED).andNot(EVENTVIEW.IS_DELETED)
+    .orderBy(EVENTVIEW.START.desc())
+    .toList()
 }
 
 fun getDefaultSeries(organizerId: Int) = db {

@@ -48,7 +48,8 @@ CREATE TABLE Event(
     start TIMESTAMP NOT NULL,
     participant_limit INT CHECK ( participant_limit >= 0 ),
     series_id INT REFERENCES EventSeries,
-    is_deleted BOOLEAN DEFAULT false
+    is_deleted BOOLEAN DEFAULT false,
+    is_archived BOOLEAN DEFAULT false
 );
 
 CREATE TABLE EventSeriesSubscription(
@@ -68,7 +69,7 @@ CREATE TABLE EventRegistration(
 );
 
 CREATE VIEW EventView AS
-SELECT E.id, E.title, E.start, E.participant_limit, T.*
+SELECT E.id, E.title, E.start, E.participant_limit, E.is_deleted, E.is_archived, T.*
 FROM Event E LEFT JOIN (
     SELECT ES.id AS series_id, ES.title AS series_title, O.id AS organizer_id, O.title AS organizer_title
     FROM EventSeries ES JOIN Organizer O on ES.organizer_id = O.id

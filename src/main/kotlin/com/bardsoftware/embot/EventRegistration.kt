@@ -9,6 +9,9 @@ import com.bardsoftware.libbotanique.ChainBuilder
 import com.bardsoftware.libbotanique.OBJECT_MAPPER
 import com.bardsoftware.libbotanique.escapeMarkdown
 import com.fasterxml.jackson.databind.node.ObjectNode
+import org.jooq.impl.DSL
+import org.jooq.types.DayToSecond
+import java.time.Duration
 
 fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
   val participant = this
@@ -113,9 +116,13 @@ fun getEventRecord(id: Int): EventviewRecord? =
   }
 fun getAvailableEvents(participant: ParticipantRecord): List<EventRecord> =
   db {
-    select(EVENT.ID, EVENT.TITLE, EVENT.START, EVENT.PARTICIPANT_LIMIT).from(EVENT.join(EVENTSERIES).on(EVENT.SERIES_ID.eq(EVENTSERIES.ID))
-      .join(EVENTSERIESSUBSCRIPTION).on(EVENTSERIESSUBSCRIPTION.SERIES_ID.eq(EVENTSERIES.ID)))
-      .where(EVENTSERIESSUBSCRIPTION.PARTICIPANT_ID.eq(participant.id)).map {
+    select(EVENT.ID, EVENT.TITLE, EVENT.START, EVENT.PARTICIPANT_LIMIT)
+      .from(EVENT.join(EVENTSERIES).on(EVENT.SERIES_ID.eq(EVENTSERIES.ID))
+        .join(EVENTSERIESSUBSCRIPTION).on(EVENTSERIESSUBSCRIPTION.SERIES_ID.eq(EVENTSERIES.ID)))
+      .where(EVENTSERIESSUBSCRIPTION.PARTICIPANT_ID.eq(participant.id)).andNot(EVENT.IS_DELETED).andNot(EVENT.IS_ARCHIVED)
+      .and(EVENT.START.ge(DSL.currentLocalDateTime().minus(DayToSecond.valueOf(Duration.ofDays(7)))))
+      .orderBy(EVENT.START.desc())
+      .map {
         EventRecord(id = it.component1(), title = it.component2(), start = it.component3(),
           participantLimit = it.component4())
     }.toList()
@@ -131,7 +138,7 @@ fun ParticipantRecord.getEventButtons(srcNode: ObjectNode) =
     )
   }.toList()
 
-fun EventRecord.formatUncheckedLabel() = """${this.title} / ${this.start}"""
+fun EventRecord.formatUncheckedLabel() = """${this.title} / ${this.start!!.toLocalDate()} ${this.start!!.toLocalTime()}"""
 
 fun EventviewRecord.formatDescription(registeredParticipantsMdwn: String) =
   """*${title!!.escapeMarkdown()}*
