@@ -8,6 +8,7 @@ import com.bardsoftware.libbotanique.BtnData
 import com.bardsoftware.libbotanique.ChainBuilder
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
 data class RegistrationFlowStorageApi(
   val getCandidateIdList: () -> List<Int>?,
@@ -23,7 +24,7 @@ data class RegistrationFlowOutputApi(
   val sendWhomAdd: (candidates: List<ParticipantRecord>, btns: List<BtnData>) -> Unit,
   val sendRegistered: (participant: ParticipantRecord) -> Unit,
   val sendRedirectToSettings: (participant: ParticipantRecord) -> Unit,
-  val close: () -> Unit
+  val close: (payload: ObjectNode) -> Unit
 )
 
 class RegistrationFlow(
@@ -35,12 +36,17 @@ class RegistrationFlow(
       storageApi.getCandidateIdList()?.let {participantIds ->
         val subscriptionId = storageApi.getSubscriptionId(event, registrant) ?: return
         storageApi.insertParticipants(participantIds, event, subscriptionId)
-      }
-      storageApi.close()
-      if (registrant.hasMissingSettings()) {
-        outputApi.sendRedirectToSettings(registrant)
-      } else {
-        outputApi.close()
+        storageApi.close()
+        if (registrant.hasMissingSettings()) {
+          outputApi.sendRedirectToSettings(registrant)
+        } else {
+          outputApi.close(jacksonObjectMapper().createObjectNode().apply {
+            setEventId(event.id!!)
+            putArray("participant_ids").let { arrayNode ->
+              participantIds.forEach(arrayNode::add)
+            }
+          })
+        }
       }
       return
     }
@@ -81,13 +87,20 @@ class RegistrationFlow(
 
 fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): RegistrationFlowOutputApi =
   RegistrationFlowOutputApi(
-    close = {
+    close = {payload ->
       tg.reply("Всех зарегистрировали!", buttons = listOf(
         BtnData("<< Назад", callbackData = json {
           setSection(CbSection.EVENTS)
           setCommand(CbEventCommand.LIST)
         }),
       ), isInplaceUpdate = true)
+      payload.getEventId()?.let {eventId ->
+        notifyRegistration(eventId, (payload.get("participant_ids") as? ArrayNode)?.mapNotNull {
+          if (it.isInt) {
+            it.asInt()
+          } else null
+        }?.toList() ?: emptyList())
+      }
     },
     sendRegistered = {participant ->
       // -------------------------------------------------------------------------

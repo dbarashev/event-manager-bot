@@ -32,6 +32,11 @@ dependencies {
     implementation("com.michael-bull.kotlin-result:kotlin-result:1.1.16")
     jooqGenerator("org.jooq:jooq-meta-extensions:3.18.0")
 
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.19.0")
+    implementation("com.google.api-client:google-api-client:1.35.2")
+    implementation("com.google.apis:google-api-services-sheets:v4-rev612-1.25.0")
+    implementation("com.google.api-client:google-api-client-jackson2:1.35.2")
+
     testImplementation(kotlin("test"))
 }
 

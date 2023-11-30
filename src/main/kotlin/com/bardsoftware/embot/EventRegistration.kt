@@ -175,7 +175,7 @@ fun returnToEventRegistrationLanding() =
     setSection(CbSection.EVENTS)
   }.toString())
 
-private fun ObjectNode.getEventId() = this["e"]?.asInt()
-private fun ObjectNode.setEventId(eventId: Int) = this.put("e", eventId)
+fun ObjectNode.getEventId() = this["e"]?.asInt()
+fun ObjectNode.setEventId(eventId: Int) = this.put("e", eventId)
 private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let { CbEventCommand.entries[it] } ?: CbEventCommand.LIST
 internal fun ObjectNode.setCommand(command: CbEventCommand) = this.put("c", command.id)

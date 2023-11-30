@@ -2,6 +2,7 @@ package com.bardsoftware.embot
 
 import com.bardsoftware.embot.db.tables.records.EventteamregistrationviewRecord
 import com.bardsoftware.embot.db.tables.records.EventviewRecord
+import com.bardsoftware.embot.db.tables.records.OrganizerRecord
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.*
 import com.bardsoftware.libbotanique.BtnData
@@ -9,14 +10,10 @@ import com.bardsoftware.libbotanique.ChainBuilder
 import com.bardsoftware.libbotanique.OBJECT_MAPPER
 import com.bardsoftware.libbotanique.escapeMarkdown
 import com.fasterxml.jackson.databind.node.ObjectNode
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.github.michaelbull.result.Err
-import com.github.michaelbull.result.Ok
-import com.github.michaelbull.result.Result
-import com.github.michaelbull.result.onFailure
+import com.github.michaelbull.result.*
 
 enum class OrgManagerCommand {
-  LANDING, EVENT_INFO, EVENT_ADD, EVENT_DELETE, EVENT_EDIT, EVENT_ARCHIVE;
+  LANDING, EVENT_INFO, EVENT_ADD, EVENT_DELETE, EVENT_EDIT, EVENT_ARCHIVE, ORG_SETTINGS;
 
   val id get() = ordinal + 200
 }
@@ -81,17 +78,20 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
           eventOrganizerLanding(tg)
         }
       }
+      OrgManagerCommand.ORG_SETTINGS -> {
+        // This is handled in the dialog code
+      }
     }
   }
   eventDialog(tg, titleMdwn = "Создаём новое событие\\.", OrgManagerCommand.EVENT_ADD) { input ->
-    jacksonObjectMapper().createObjectNode().apply {
+    input.apply {
       put("org_id", input.getOrganizationId())
       put("series_id", getDefaultSeries(input.getOrganizationId()!!)!!.id)
     }
   }
   eventDialog(tg, titleMdwn = "Редактируем событие\\.", OrgManagerCommand.EVENT_EDIT) { input ->
     input.getEventId()?.let(::getEventRecord)?.let { event ->
-      jacksonObjectMapper().createObjectNode().apply {
+      input.apply {
         put("org_id", input.getOrganizationId())
         put("series_id", getDefaultSeries(input.getOrganizationId()!!)!!.id)
         put("event_id", event.id)
@@ -101,8 +101,42 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
       }
     } ?: input
   }
+  orgSettingsDialog(tg)
 }
 
+fun orgSettingsDialog(tg: ChainBuilder) {
+  tg.dialog(
+    id = OrgManagerCommand.ORG_SETTINGS.id,
+    intro = """
+      Настройки организации.
+    """.trimIndent()) {
+
+    trigger = json {
+      setSection(CbSection.MANAGER)
+      setCommand(OrgManagerCommand.ORG_SETTINGS)
+    }
+    setup = {
+      exitPayload = json {
+        setSection(CbSection.MANAGER)
+        setCommand(OrgManagerCommand.LANDING)
+      }
+      val org: OrganizerRecord = it.getOrganizationId()?.let(::getOrg)!!
+      it.put(ORGANIZER.ID.name, org.id)
+      it.put(ORGANIZER.TITLE.name, org.title)
+      it.put(ORGANIZER.GOOGLE_SHEET_ID.name, org.googleSheetId)
+      it
+    }
+    step(ORGANIZER.TITLE.name, DialogDataType.TEXT, "Название", "Название вашей организации")
+    step(ORGANIZER.GOOGLE_SHEET_ID.name, DialogDataType.TEXT, "Google Sheet ID", "Идентификатор связанной Google таблицы. Прочитайте справку о том, как и зачем привязывать таблицу")
+    confirm("Применить?") { json->
+      updateOrg(json).andThen {
+        tg.userSession.reset()
+        tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
+        Ok(Unit)
+      }.mapError { " Что-то пошло не так" }
+    }
+  }
+}
 fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand, setupCode: (ObjectNode)->ObjectNode) {
   tg.dialog(
     id = command.id,
@@ -146,33 +180,47 @@ fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder): Result<Unit, Stri
   return when (orgs.size) {
     0 -> Err("У вас пока что нет организаторских прав")
     1 -> {
-      this.eventOrganizerLanding(tg, orgs[0].get(ORGANIZER.ID)!!, orgs[0].get(ORGANIZER.TITLE)!!)
+      this.eventOrganizerLanding(tg, OrganizerRecord().apply {
+        id = orgs[0].get(ORGANIZER.ID)
+        title = orgs[0].get(ORGANIZER.TITLE)
+        googleSheetId = orgs[0].get(ORGANIZER.GOOGLE_SHEET_ID)
+      })
       Ok(Unit)
     }
     else -> Err("Кажется, у вас более одной организации. Пока что я не умею с этим работать (")
   }
 }
-fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder, organizerId: Int, organizerTitle: String) {
+fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder, org: OrganizerRecord) {
   val eventAddBtns = listOf(
-    BtnData("Добавить событие", callbackData = OBJECT_MAPPER.createObjectNode().apply {
+    BtnData("Добавить событие...", callbackData = OBJECT_MAPPER.createObjectNode().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_ADD)
-      setOrganizationId(organizerId)
+      setOrganizationId(org.id!!)
     }.toString())
   )
-  val eventInfoBtns = getAllEvents(organizerId).map { eventRecord ->
+  val eventInfoBtns = getAllEvents(org.id!!).map { eventRecord ->
     BtnData(eventRecord.title!!, OBJECT_MAPPER.createObjectNode().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_INFO)
-      setOrganizationId(organizerId)
+      setOrganizationId(org.id!!)
       setEventId(eventRecord.id!!)
     }.toString())
   }.toList()
-  val escButtons = listOf(returnToFirstLanding())
+  val escButtons = listOf(
+    BtnData("Настройки...", callbackData = json {
+      setSection(CbSection.MANAGER)
+      setCommand(OrgManagerCommand.ORG_SETTINGS)
+      setOrganizationId(org.id!!)
+    }),
+    returnToFirstLanding()
+  )
   tg.reply("""
-    *${organizerTitle.escapeMarkdown()}*
+    *${org.title!!.escapeMarkdown()}*
     
-    Тут можно управлять событиями\. Можно добавить новое или узнать состояние существующего\. 
+    \-\-\-\-
+    Связанная Google\-таблица\: ${org.googleSheetId?.let { "✔" } ?: "нет"}  
+    \-\-\-\-
+    Используйте кнопки внизу для управления событиями или изменения настроек\.
     """.trimIndent(),
     buttons = eventAddBtns + eventInfoBtns + escButtons,
     maxCols = 1, isInplaceUpdate = true, isMarkdown = true)
@@ -222,6 +270,23 @@ fun deleteEvent(eventData: ObjectNode) =
     update(EVENT).set(EVENT.IS_DELETED, true).where(EVENT.ID.eq(eventData.getEventId())).execute()
   }
 
+fun getOrg(orgId: Int) = db {
+  selectFrom(ORGANIZER).where(ORGANIZER.ID.eq(orgId)).fetchOne()
+}
+
+fun updateOrg(json: ObjectNode) = runCatching {
+  db {
+    val updatedRows = update(ORGANIZER)
+      .set(ORGANIZER.TITLE, json[ORGANIZER.TITLE.name]?.asText())
+      .set(ORGANIZER.GOOGLE_SHEET_ID, json[ORGANIZER.GOOGLE_SHEET_ID.name]?.asText())
+      .where(ORGANIZER.ID.eq(json[ORGANIZER.ID.name]!!.asInt()))
+      .execute()
+    if (updatedRows != 1) {
+      throw RuntimeException("Что-то пошло не так, изменения не внесены")
+    }
+  }
+}.mapError { it.message ?: "Что-то пошло не так" }
+
 private fun createEscButton() =
   BtnData("<< Назад", callbackData = OBJECT_MAPPER.createObjectNode().apply {
     setSection(CbSection.MANAGER)
@@ -230,7 +295,5 @@ private fun createEscButton() =
 
 private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let(OrgManagerCommand.entries::get) ?: OrgManagerCommand.LANDING
 private fun ObjectNode.setCommand(cmd: OrgManagerCommand) = this.put("c", cmd.ordinal)
-private fun ObjectNode.setEventId(eventId: Int) = this.put("e", eventId)
-private fun ObjectNode.getEventId() = this["e"]?.asInt()
 private fun ObjectNode.setOrganizationId(organizationId: Int) = this.put("o", organizationId)
 private fun ObjectNode.getOrganizationId() = this["o"]?.asInt()
