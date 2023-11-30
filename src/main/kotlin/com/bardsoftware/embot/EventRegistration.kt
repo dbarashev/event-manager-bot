@@ -143,16 +143,20 @@ fun EventRecord.formatUncheckedLabel() = """${this.title} / ${this.start!!.toLoc
 fun EventviewRecord.formatDescription(registeredParticipantsMdwn: String) =
   """*${title!!.escapeMarkdown()}*
     |${seriesTitle?.escapeMarkdown() ?: ""}
-    | ${"\\-".repeat(20)}
+    | ${"\\-".repeat(40)}
     | *Организаторы*\: ${organizerTitle?.escapeMarkdown() ?: ""}
     | *Дата*\: ${start!!.toLocalDate().toString().escapeMarkdown()}
     | *Время*\: ${start!!.toLocalTime().toString().escapeMarkdown()}
     | *Max\. участников*\: ${participantLimit?.toString() ?: "\\-"}
+    | ${"\\-".repeat(40)}
     | 
     | *Зарегистрированы*\: 
     | ${registeredParticipantsMdwn}
+    | ${"\\-".repeat(40)}
+    | *Ссылка для регистрации*\: [${this.registrationLink().escapeMarkdown()}]
   """.trimMargin()
 
+fun EventviewRecord.registrationLink() = """https://t.me/${System.getenv("TG_BOT_USERNAME")}?start=${this.id}"""
 fun EventviewRecord.register(registrant: ParticipantRecord, participant: ParticipantRecord) = txn {
   val subscriptionId = selectFrom(EVENTSERIESSUBSCRIPTION)
     .where(EVENTSERIESSUBSCRIPTION.SERIES_ID.eq(this@register.seriesId)
