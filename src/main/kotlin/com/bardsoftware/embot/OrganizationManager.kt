@@ -162,7 +162,11 @@ fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand,
       "Введите дату и время начала в формате YYYY-MM-DD HH:mm. Например, 2023-11-21 09:00.")
     step("limit", DialogDataType.INT, "Участников (max)", "Максимальное количество участников:")
     confirm("Создаём?") {json ->
-      if (createEvent(json)) Ok(json) else Err("Что-то пошло не так")
+      if (createEvent(json)) {
+        tg.userSession.reset()
+        tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
+        Ok(json)
+      } else Err("Что-то пошло не так")
     }
   }
 }
