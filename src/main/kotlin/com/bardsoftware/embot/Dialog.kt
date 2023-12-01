@@ -106,7 +106,7 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
       val expectedStep = steps[expectedStepIdx]
       val isValueValid = when(expectedStep.dataType) {
         DialogDataType.TEXT -> true
-        DialogDataType.INT -> msg.toIntOrNull() != null
+        DialogDataType.INT -> msg.toIntOrNull()?.takeIf { it >= 0 } != null
         DialogDataType.NUMBER -> msg.toBigDecimalOrNull() != null
         DialogDataType.DATE -> msg.toDate().isSuccess
       }
