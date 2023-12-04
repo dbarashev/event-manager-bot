@@ -3,7 +3,6 @@ package com.bardsoftware.embot
 import com.bardsoftware.embot.db.tables.records.EventteamregistrationviewRecord
 import com.bardsoftware.embot.db.tables.records.EventviewRecord
 import com.bardsoftware.embot.db.tables.records.OrganizerRecord
-import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.*
 import com.bardsoftware.libbotanique.*
 import com.fasterxml.jackson.databind.node.ObjectNode
@@ -14,45 +13,7 @@ enum class OrgManagerCommand {
 
   val id get() = ordinal + 200
 }
-fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
-  tg.onCallback {node ->
-    if (node.getSection() != CbSection.MANAGER) {
-      return@onCallback
-    }
-
-    if (node.getDialogId() == null) {
-      tg.userSession.reset()
-    }
-    when (node.getCommand()) {
-      OrgManagerCommand.LANDING -> {
-        // handled in the state machine
-      }
-      OrgManagerCommand.EVENT_INFO -> {
-        // handled in the state machine
-      }
-      OrgManagerCommand.EVENT_ADD -> {
-        // This is handled in the dialog code
-      }
-      OrgManagerCommand.EVENT_EDIT -> {
-        // This is handled in the dialog code
-      }
-      OrgManagerCommand.EVENT_DELETE -> {
-        node.getEventId()?.let {
-          deleteEvent(node)
-          tg.reply("Событие перемещено в помойку", buttons = listOf(createEscButton()), isInplaceUpdate = true)
-        }
-      }
-      OrgManagerCommand.EVENT_ARCHIVE -> {
-        node.getEventId()?.let {
-          archiveEvent(it)
-//          eventOrganizerLanding(tg)
-        }
-      }
-      OrgManagerCommand.ORG_SETTINGS -> {
-        // This is handled in the dialog code
-      }
-    }
-  }
+fun organizationManagementModule(tg: ChainBuilder) {
   eventDialog(tg, titleMdwn = "Создаём новое событие\\.", OrgManagerCommand.EVENT_ADD) { input ->
     input.apply {
       setDialogId(OrgManagerCommand.EVENT_EDIT.id)
@@ -166,7 +127,28 @@ class OrgLandingAction(input: InputData): StateAction {
     Используйте кнопки внизу для управления событиями или изменения настроек\.
     """.trimIndent(), TextMarkup.MARKDOWN)
 
-  override val buttonTransition get() = ButtonTransition(orgLandingButtons(orgRecord))
+  override val buttonTransition get() = ButtonTransition(listOf(
+    "ORG_EVENT_ADD" to ButtonBuilder({ "Создать событие..." }) {
+      OutputData(objectNode { setOrganizationId(orgRecord.id!!) })
+    }
+  ) + getAllEvents(orgRecord.id!!).map {eventRecord ->
+    "ORG_EVENT_INFO" to ButtonBuilder({eventRecord.title!!}) {
+      OutputData(objectNode {
+        setOrganizationId(orgRecord.id!!)
+        setEventId(eventRecord.id!!)
+      })
+    }
+  } + listOf(
+    "ORG_SETTINGS" to ButtonBuilder({"Настройки..."}) {
+      OutputData(objectNode {
+        setSection(CbSection.DIALOG)
+        setDialogId(OrgManagerCommand.ORG_SETTINGS.id)
+        setOrganizationId(orgRecord.id!!)
+      })
+    }
+  ) + listOf(
+    "START" to ButtonBuilder({"<< Назад"})
+  ))
 }
 
 class OrgEventInfoAction(private val input: InputData): StateAction {
@@ -214,29 +196,7 @@ class OrgEventInfoAction(private val input: InputData): StateAction {
 
 }
 
-fun orgLandingButtons(org: OrganizerRecord): List<Pair<String, ButtonBuilder>> = listOf(
-  "ORG_EVENT_ADD" to ButtonBuilder({ "Создать событие..." },
-    output = { OutputData(objectNode { setOrganizationId(org.id!!) })
-  })
-) + getAllEvents(org.id!!).map {eventRecord ->
-  "ORG_EVENT_INFO" to ButtonBuilder({eventRecord.title!!},
-    output = { OutputData(objectNode {
-      setOrganizationId(org.id!!)
-      setEventId(eventRecord.id!!)
-    })})
-} + listOf(
-  "ORG_SETTINGS" to ButtonBuilder({"Настройки..."},
-    output = {
-      OutputData(objectNode {
-        setSection(CbSection.DIALOG)
-        setDialogId(OrgManagerCommand.ORG_SETTINGS.id)
-        setOrganizationId(org.id!!)
-      })
-    }
-  )
-) + listOf(
-  "START" to ButtonBuilder({"<< Назад"})
-)
+
 
 fun getManagedOrganizations(tgUserId: Long) = db {
   selectFrom(ORGANIZERMANAGER.join(ORGANIZER).on(ORGANIZER.ID.eq(ORGANIZERMANAGER.ORGANIZER_ID)))
@@ -276,9 +236,9 @@ fun createEvent(eventData: ObjectNode): Boolean =
     true
   }
 
-fun deleteEvent(eventData: ObjectNode) =
-  db {
-    update(EVENT).set(EVENT.IS_DELETED, true).where(EVENT.ID.eq(eventData.getEventId())).execute()
+fun deleteEvent(eventId: Int) =
+  txn {
+    update(EVENT).set(EVENT.IS_DELETED, true).where(EVENT.ID.eq(eventId)).execute()
   }
 
 fun getOrg(orgId: Int) = db {

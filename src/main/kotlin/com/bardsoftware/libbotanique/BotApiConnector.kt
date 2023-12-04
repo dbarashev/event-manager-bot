@@ -147,7 +147,7 @@ fun createOutputUi(tg: ChainBuilder, inputData: InputData, state: (String)->Stat
             BtnData(buttonBuilder.label(inputData), callbackData = json(state.stateJson) {
               put("_", buttonBuilder.output(inputData).contextJson)
             })
-          }
+          } ?: throw RuntimeException("State with ID=${stateId} not found")
         }.toList()
       )
     }

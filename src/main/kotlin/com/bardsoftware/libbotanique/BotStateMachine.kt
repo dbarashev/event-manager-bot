@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.michaelbull.result.*
+import org.slf4j.LoggerFactory
 
 data class TgUser(val displayName: String, val id: String)
 data class InputData(val stateJson: ObjectNode, val contextJson: ObjectNode, val user: TgUser)
@@ -35,7 +36,7 @@ class State(val id: String) {
   }
 
   fun matches(input: InputData): Boolean {
-    if (isIgnored) return true
+    if (isIgnored) return false
     val requiredSet = requiredNode.fields().asSequence().toSet()
     val nodeSet = input.stateJson.fields().asSequence().toSet()
     if (!nodeSet.containsAll(requiredSet)) {
@@ -52,6 +53,10 @@ class State(val id: String) {
       it.removeAll(requiredPredicates.keys)
       it.isEmpty()
     }
+  }
+
+  override fun toString(): String {
+    return "State(id='$id', requiredNode=$requiredNode, isSubset=$isSubset, isIgnored=$isIgnored)"
   }
 
 
@@ -82,12 +87,25 @@ interface StateAction {
   val buttonTransition: ButtonTransition
 }
 
-class SimpleStateAction(
+class ButtonsAction(
   override val text: TextMessage,
   val buttons: List<Pair<String, ButtonBuilder>>): StateAction {
 
   override val buttonTransition: ButtonTransition
     get() = ButtonTransition(buttons)
+}
+
+class SimpleAction(
+  text: String, returnState: String, input: InputData, code: (InputData)->Unit): StateAction {
+  override val text = TextMessage(text)
+
+  override val buttonTransition = ButtonTransition(listOf(
+    returnState to ButtonBuilder({"<< Назад"})
+  ))
+
+  init {
+    code(input)
+  }
 }
 
 class BotStateMachine {
@@ -110,6 +128,7 @@ class BotStateMachine {
 
   fun handle(input: InputData, outputUi: OutputUi): Result<State, String> {
     val state = states.entries.firstOrNull { it.value.matches(input) }?.value ?: return Err("The input doesn't match any state")
+    LOG.debug("Entered state {}", state)
     val stateAction = actions[state.id] ?: return Err("No action is registered for state ${state.id}")
     return stateAction(input).map {
       outputUi.showButtons(it.text, it.buttonTransition)
@@ -121,3 +140,5 @@ class BotStateMachine {
 
 fun objectNode(prototype: ObjectNode = jacksonObjectMapper().createObjectNode(),
                builder: ObjectNode.() -> Unit) = prototype.deepCopy().apply(builder)
+
+private val LOG = LoggerFactory.getLogger("Bot.State")

@@ -44,7 +44,7 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
     trigger {
       setSection(CbSection.LANDING)
     }
-    action(id) {input -> Ok(SimpleStateAction(
+    action(id) {input -> Ok(ButtonsAction(
       text = TextMessage("Привет, ${input.user.displayName}!"),
       buttons = listOf(
         "ORG_LANDING" to         ButtonBuilder(label = { "Организатор >>" }),
@@ -73,12 +73,6 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       Ok(OrgEventInfoAction(it))
     }
   }
-  state("PARTICIPANT_LANDING") {
-    trigger {
-      setSection(CbSection.PARTICIPANT)
-      setCommand(CbEventCommand.LANDING)
-    }
-  }
   state("SETTINGS_LANDING") {
     trigger {
       setSection(CbSection.SETTINGS)
@@ -91,23 +85,27 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setCommand(OrgManagerCommand.EVENT_ADD)
     }
   }
-  state("ORG_EVENT_INFO") {
-    trigger {
-      setSection(CbSection.MANAGER)
-      setCommand(OrgManagerCommand.EVENT_INFO)
-    }
-  }
   state("ORG_EVENT_ARCHIVE") {
     trigger {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_ARCHIVE)
+    }
+    action(id) {Ok(SimpleAction("Событие перемещено в архив", "ORG_LANDING", it) {
+      it.contextJson.getEventId()!!.let(::archiveEvent)
+    })}
+  }
+  state("ORG_EVENT_ADD") {
+    isIgnored = true
+    trigger {
+      setSection(CbSection.DIALOG)
+      setDialogId(OrgManagerCommand.EVENT_ADD.id)
     }
   }
   state("ORG_EVENT_EDIT") {
     isIgnored = true
     trigger {
       setSection(CbSection.DIALOG)
-      setCommand(OrgManagerCommand.EVENT_EDIT)
+      setDialogId(OrgManagerCommand.EVENT_EDIT.id)
     }
   }
   state("ORG_EVENT_DELETE") {
@@ -115,6 +113,9 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_DELETE)
     }
+    action(id) {Ok(SimpleAction("Событие перемещено в помойку", "ORG_LANDING", it) {
+      it.contextJson.getEventId()!!.let(::deleteEvent)
+    })}
   }
   state("ORG_SETTINGS") {
     trigger {
@@ -122,12 +123,51 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setCommand(OrgManagerCommand.ORG_SETTINGS)
     }
   }
-
+  state("PARTICIPANT_LANDING") {
+    trigger {
+      setSection(CbSection.PARTICIPANT)
+      setCommand(CbEventCommand.LANDING)
+    }
+    action(id) { Ok(ButtonsAction(
+      text = TextMessage("""
+        Что тут можно делать?
+    
+        *Моя команда* — тут можно добавить участника мероприятий, у которого нет своего телеграма, например вашего ребенка\.
+        *Мои события* — тут можно регистрироваться на доступные вам мероприятия\.
+      """.trimIndent(), TextMarkup.MARKDOWN),
+      buttons = listOf(
+        "TEAM_LANDING" to        ButtonBuilder(label = {"Моя команда >>"}),
+        "PARTICIPANT_EVENTS" to  ButtonBuilder(label = {"Мои события >>"}),
+        "PARTICIPANT_LANDING" to ButtonBuilder(label = {"<< Назад"})
+      ),
+    ))}
+  }
+  state("TEAM_LANDING") {
+    trigger {
+      setSection(CbSection.TEAM)
+      setCommand(CbTeamCommand.LANDING)
+    }
+    action(id) { Ok(TeamLandingAction(it))}
+  }
+  state("TEAM_MEMBER_ADD") {
+    isIgnored = true
+    trigger {
+      setSection(CbSection.DIALOG)
+      setCommand(CbTeamCommand.ADD_DIALOG)
+    }
+  }
+  state("PARTICIPANT_EVENTS") {
+    isIgnored = true
+    trigger {
+      setSection(CbSection.EVENTS)
+      setCommand(CbTeamCommand.LANDING)
+    }
+  }
 }
 
 
 fun processMessage(update: Update, sender: MessageSender) {
-  LOG_INPUT.debug("Received update {}", update.message?.messageId ?: update.callbackQuery?.let {"callback"})
+  LOG_INPUT.debug("Received update {}", update.message?.messageId ?: update.callbackQuery?.let {"callback ${it.data}"})
   val tg = ChainBuilder(update, sender, ::userSessionProvider)
   val user = TgUser(tg.fromUser?.displayName() ?: "", tg.fromUser?.id?.toString() ?: "")
   buildStateMachine().run {
@@ -143,6 +183,7 @@ fun processMessage(update: Update, sender: MessageSender) {
 
     handle(inputData, outputUi)
   }.onSuccess { tg.sendReplies() }.onFailure {
+    LOG_INPUT.warn("Failed to process with the state machine: {}", it)
     tg.callbackJson?.let {callbackJson ->
       val contextJson = callbackJson.remove("_")
       LOG_INPUT.debug("Callback JSON={}", callbackJson)
@@ -159,8 +200,7 @@ fun processMessage(update: Update, sender: MessageSender) {
       val tgUsername = this.userName
       val participant = getOrCreateParticipant(tgUserId, tgUsername, 1)
 
-      participant.landing(this)
-      participant.organizationManagementCallbacks(this)
+      organizationManagementModule(this)
       participant.eventRegistrationCallbacks(this)
       participant.teamManagementCallbacks(this)
       participant.settingsModule(this)

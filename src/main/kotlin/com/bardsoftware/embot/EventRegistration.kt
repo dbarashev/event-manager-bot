@@ -27,7 +27,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       CbEventCommand.LANDING -> {
         // -------------------------------------------------------------------------
         tg.reply("Ваши события:",
-          buttons = participant.getEventButtons(node) + returnToParticipantLanding(),
+          buttons = participant.getEventButtons(node),
           maxCols = 1, isInplaceUpdate = true)
         // -------------------------------------------------------------------------
       }

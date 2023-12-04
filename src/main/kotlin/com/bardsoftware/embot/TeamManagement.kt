@@ -1,12 +1,11 @@
 package com.bardsoftware.embot
 
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
+import com.bardsoftware.embot.db.tables.records.ParticipantteamviewRecord
 import com.bardsoftware.embot.db.tables.references.PARTICIPANT
 import com.bardsoftware.embot.db.tables.references.PARTICIPANTTEAM
 import com.bardsoftware.embot.db.tables.references.PARTICIPANTTEAMVIEW
-import com.bardsoftware.libbotanique.BtnData
-import com.bardsoftware.libbotanique.ChainBuilder
-import com.bardsoftware.libbotanique.escapeMarkdown
+import com.bardsoftware.libbotanique.*
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.github.michaelbull.result.Err
 import com.github.michaelbull.result.Ok
@@ -18,25 +17,6 @@ enum class CbTeamCommand {
 
 fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
   val participant = this
-  tg.onCallback { node ->
-
-    if (node.getSection() != CbSection.TEAM) {
-      return@onCallback
-    }
-
-    when (node.getCommand()) {
-      CbTeamCommand.LANDING -> {
-        landing(tg, node = node, isInplaceUpdate = true)
-        tg.userSession.reset()
-      }
-      CbTeamCommand.ADD_DIALOG -> {
-        // Handled in the dialog code below
-      }
-      CbTeamCommand.RESET -> {
-        tg.userSession.reset()
-      }
-    }
-  }
   tg.dialog(
     id = CbTeamCommand.ADD_DIALOG.id,
     intro = """
@@ -76,25 +56,29 @@ fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
   }
 }
 
-fun landing(tg: ChainBuilder, isInplaceUpdate: Boolean, node: ObjectNode) {
-  db {
-    val list = selectFrom(PARTICIPANTTEAMVIEW).where(PARTICIPANTTEAMVIEW.LEADER_USER_ID.eq(tg.userId)).map {
-      """${it.followerDisplayName!!.escapeMarkdown()}, ${it.followerAge}"""
-    }.joinToString(separator = "\n")
-    tg.reply("""*Ваша команда*:
-            |${"-".repeat(20).let {it.escapeMarkdown()}}
-            |$list
-          """.trimMargin(),
-      isMarkdown = true,
-      buttons = listOf(
-        BtnData("Добавить участника", node.deepCopy().put(CB_COMMAND, CbTeamCommand.ADD_DIALOG.id).toString()),
-        BtnData("<< Назад", node.deepCopy().apply {
-          setSection(CbSection.LANDING)
-        }.toString())
-      ),
-      isInplaceUpdate = isInplaceUpdate
-    )
-  }
+class TeamLandingAction(private val teamMemberList: List<ParticipantteamviewRecord>): StateAction {
+  constructor(inputData: InputData): this(
+    db {
+      selectFrom(PARTICIPANTTEAMVIEW).where(PARTICIPANTTEAMVIEW.LEADER_USER_ID.eq(inputData.user.id.toLong())).toList()
+    }
+  )
+
+  override val text = TextMessage(
+    """*Ваша команда*:
+    |${"-".repeat(20).escapeMarkdown()}
+    |${teamMemberList.map{"${it.followerDisplayName!!.escapeMarkdown()}, ${it.followerAge}"}.joinToString(separator = "\n")}
+    """.trimMargin(), TextMarkup.MARKDOWN
+  )
+
+  override val buttonTransition get() = ButtonTransition(listOf(
+    "TEAM_MEMBER_ADD" to ButtonBuilder({"Добавить участника..."}) {OutputData(
+      objectNode {
+        setSection(CbSection.DIALOG)
+        setDialogId(CbTeamCommand.ADD_DIALOG.id)
+      }
+    )},
+    "PARTICIPANT_LANDING" to ButtonBuilder({"<< Назад"})
+  ))
 }
 
 fun ParticipantRecord.teamMembers(): List<ParticipantRecord> =

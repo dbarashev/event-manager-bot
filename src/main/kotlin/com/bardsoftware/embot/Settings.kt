@@ -44,7 +44,7 @@ fun ParticipantRecord.settingsModule(tg: ChainBuilder) {
               setSection(CbSection.DIALOG)
               setDialogId(SettingsCommand.CHANGE.id)
             }),
-            returnToFirstLanding()
+
           ), isInplaceUpdate = true, isMarkdown = false
         )
       }
