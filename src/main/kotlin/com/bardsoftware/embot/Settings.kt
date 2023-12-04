@@ -40,8 +40,9 @@ fun ParticipantRecord.settingsModule(tg: ChainBuilder) {
           | Телефон: ${participant.phone}
         """.trimMargin(),
           buttons = listOf(
-            BtnData("Поменять", callbackData = json(node) {
-              setCommand(SettingsCommand.CHANGE)
+            BtnData("Поменять...", callbackData = json(node) {
+              setSection(CbSection.DIALOG)
+              setDialogId(SettingsCommand.CHANGE.id)
             }),
             returnToFirstLanding()
           ), isInplaceUpdate = true, isMarkdown = false
@@ -60,10 +61,6 @@ fun ParticipantRecord.settingsModule(tg: ChainBuilder) {
       _Процесс можно прервать в любой момент кнопкой "Отменить"_
       """.trimIndent()) {
 
-    trigger = json {
-      setSection(CbSection.SETTINGS)
-      setCommand(SettingsCommand.CHANGE)
-    }
     setup = { input -> jacksonObjectMapper().createObjectNode().apply {
       put("participant_id", participant.id)
       put("name", participant.displayName)
@@ -77,8 +74,8 @@ fun ParticipantRecord.settingsModule(tg: ChainBuilder) {
     step("phone", DialogDataType.TEXT, "Телефон", "Контактный телефон:")
     confirm("Сохранить изменения?") {json ->
       applySettings(json).andThen {
-        tg.userSession.reset()
         tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
+        tg.userSession.reset()
         Ok(Unit)
       }.mapError { " Что-то пошло не так" }
     }
@@ -97,7 +94,7 @@ fun applySettings(json: ObjectNode): Result<Unit, Throwable> =
   }
 
 private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let(SettingsCommand::find) ?: SettingsCommand.LANDING
-private fun ObjectNode.setCommand(cmd: SettingsCommand) = this.put("c", cmd.id)
+fun ObjectNode.setCommand(cmd: SettingsCommand) = this.put("c", cmd.id)
 
 private fun ObjectNode.getChangeField() = this["f"]?.asInt()?.let(SettingsField.entries::get)
 private fun ObjectNode.setChangeField(field: SettingsField) = this.put("f", field.ordinal)

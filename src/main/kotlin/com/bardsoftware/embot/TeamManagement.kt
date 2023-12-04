@@ -45,10 +45,6 @@ fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
       _Процесс можно прервать в любой момент кнопкой "Отменить"_
       """.trimIndent()) {
 
-    trigger = json {
-      setSection(CbSection.TEAM)
-      setCommand(CbTeamCommand.ADD_DIALOG)
-    }
     setup = {
       exitPayload = it.get("esc")?.toString() ?: json {
         setSection(CbSection.TEAM)

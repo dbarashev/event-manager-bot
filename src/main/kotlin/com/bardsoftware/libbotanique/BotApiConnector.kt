@@ -1,5 +1,7 @@
 package com.bardsoftware.libbotanique
 
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.bots.DefaultBotOptions
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
@@ -73,7 +75,11 @@ class LongPollingConnector(
     try {
       processor(update, getMessageSender())
     } catch (ex: Exception) {
-      getMessageSender().send(SendMessage(update.message.chatId.toString(), "Oooops!"))
+      LOG.error("Failed to process the update", ex)
+      LOG.debug("Update data: {}", update)
+      update.message?.let {
+        getMessageSender().send(SendMessage(it.chatId.toString(), "Oooops!"))
+      }
     }
   }
 }
@@ -129,3 +135,26 @@ private fun createBotOptions() = DefaultBotOptions().apply {
   baseUrl = System.getenv("TG_BASE_URL") ?: ApiConstants.BASE_URL
 }
 private val LOGGER = LoggerFactory.getLogger("Bot")
+
+fun emptyNode() = jacksonObjectMapper().createObjectNode()
+fun createOutputUi(tg: ChainBuilder, inputData: InputData, state: (String)->State?): OutputUi {
+  return OutputUi(
+    showButtons = {text, transition ->
+      tg.reply(text.text, isMarkdown = text.markup == TextMarkup.MARKDOWN, maxCols = transition.columnCount,
+        isInplaceUpdate = transition.inplaceUpdate && tg.update.callbackQuery?.message?.messageId != null,
+        buttons = transition.buttons.mapNotNull { (stateId, buttonBuilder) ->
+          state(stateId)?.let {state ->
+            BtnData(buttonBuilder.label(inputData), callbackData = json(state.stateJson) {
+              put("_", buttonBuilder.output(inputData).contextJson)
+            })
+          }
+        }.toList()
+      )
+    }
+  )
+}
+
+private fun json(prototype: ObjectNode = jacksonObjectMapper().createObjectNode(),
+         builder: ObjectNode.() -> Unit) = prototype.deepCopy().apply(builder).toString()
+
+private val LOG = LoggerFactory.getLogger("Bot")

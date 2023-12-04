@@ -21,30 +21,28 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       return@onCallback
     }
 
-    val event = node.getEventId()?.let(::getEventRecord) ?: run {
-      // -------------------------------------------------------------------------
-      tg.reply("Ваши события:",
-        buttons = participant.getEventButtons(node) + returnToParticipantLanding(),
-        maxCols = 1, isInplaceUpdate = true)
-      // -------------------------------------------------------------------------
-      return@onCallback
-    }
+    val event = node.getEventId()?.let(::getEventRecord)
 
     when(node.getCommand()) {
-      CbEventCommand.LIST -> {
-        showEvent(participant, event, tg)
+      CbEventCommand.LANDING -> {
+        // -------------------------------------------------------------------------
+        tg.reply("Ваши события:",
+          buttons = participant.getEventButtons(node) + returnToParticipantLanding(),
+          maxCols = 1, isInplaceUpdate = true)
+        // -------------------------------------------------------------------------
       }
+      CbEventCommand.LIST -> event?.let { showEvent(participant, it, tg) }
 
-      CbEventCommand.REGISTER -> {
-        registerParticipant(node, event, participant, tg)
+      CbEventCommand.REGISTER -> event?.let {
+        registerParticipant(node, it, participant, tg)
       }
-      CbEventCommand.UNREGISTER -> {
+      CbEventCommand.UNREGISTER -> event?.let {
         db {
           deleteFrom(EVENTREGISTRATION).where(EVENTREGISTRATION.PARTICIPANT_ID.`in`(
             select(EVENTTEAMREGISTRATIONVIEW.PARTICIPANT_ID)
               .from(EVENTTEAMREGISTRATIONVIEW)
               .where(EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(participant.userId)
-                .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(event.id))
+                .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(it.id))
               )
           )).execute()
         }

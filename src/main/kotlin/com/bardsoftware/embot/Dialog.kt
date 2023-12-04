@@ -4,6 +4,7 @@ import com.bardsoftware.libbotanique.*
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.michaelbull.result.Result
+import org.slf4j.LoggerFactory
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -22,22 +23,22 @@ data class DialogStep(
 data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
   private val steps = mutableListOf<DialogStep>()
 
-  var exitPayload: String?
-    set(value) {
-      value?.asJson()?.let {
-        tg.userSession.save(id, json(dialogData) {
-          set<ObjectNode>("esc", it)
-        })
-      }
+  var exitPayload: String = "{}"
+
+  val dialogData: ObjectNode by lazy {
+    tg.userSession.state?.asJson()?.also {
+      LOG_DIALOG.debug("..read dialog data={}", it)
+      exitPayload = it["esc"].toString()
     }
-    get() = dialogData["esc"]?.toString()
-
-
-  val dialogData: ObjectNode get() = tg.userSession.state?.asJson() ?: jacksonObjectMapper().createObjectNode()
-  var trigger: String = "{}"
+    ?: jacksonObjectMapper().createObjectNode() }
+  private fun saveDialogData(node: ObjectNode = dialogData) {
+    tg.userSession.save(this@Dialog.id, node.apply {
+      set<ObjectNode>("esc", exitPayload.asJson())
+    }.toString())
+  }
   var setup: (ObjectNode) -> ObjectNode = { jacksonObjectMapper().createObjectNode() }
 
-  val escapeButton get() = BtnData("<< Назад", callbackData = exitPayload ?: "{}")
+  val escapeButton get() = BtnData("<< Назад", callbackData = exitPayload)
 
   fun step(id: String, type: DialogDataType, shortLabel: String, prompt: String, validatorReply: String = "") {
     steps.add(DialogStep(id, prompt, type, shortLabel, validatorReply))
@@ -50,14 +51,17 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
   }
 
   private fun replyStep(dialogData: ObjectNode, stepIdx: Int) {
-    dialogData.put("next_field", steps[stepIdx].fieldName)
-    tg.userSession.save(this.id, dialogData.toString())
+    dialogData.apply {
+      put("next_field", steps[stepIdx].fieldName)
+      set<ObjectNode>("esc", exitPayload?.asJson())
+    }
+    saveDialogData()
     val prefixButtons = dialogData[steps[stepIdx].fieldName]?.let {
       listOf(BtnData("Пропустить", callbackData = json {
         setSection(CbSection.DIALOG)
         setDialogId(this@Dialog.id)
+        setDialogOk()
         put("next_field", stepIdx)
-        put("c", true)
       }))
     } ?: emptyList()
     val defaultValue = dialogData[steps[stepIdx].fieldName]?.asText()?.let {
@@ -73,36 +77,37 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
 
   fun createDialog(confirmQuestion: String, onSuccess: (ObjectNode) -> Unit) {
     tg.onCallback { node ->
-      jacksonObjectMapper().readTree(trigger).let {
-        val triggerSet = it.fields().asSequence().toSet()
-        val nodeSet = node.fields().asSequence().toSet()
-        if (nodeSet.containsAll(triggerSet)) {
-          replyStep(setup(node), 0)
-          return@onCallback
-        }
-      }
+      LOG_DIALOG.debug("This dialog ID={}, dialog ID in the input is {}", this.id, node.getDialogId())
       if (node.getDialogId() == this@Dialog.id) {
-        node["next_field"]?.asInt()?.let { expectedFieldIdx ->
-          if (node["c"]?.asBoolean() == true) {
+        if (node.hasDialogOk()) {
+          LOG_DIALOG.debug("..user clicked Ok or Next")
+          node["next_field"]?.asInt()?.let { expectedFieldIdx ->
             // Skip this field
-            val dialogData = tg.userSession.state?.asJson() ?: OBJECT_MAPPER.createObjectNode()
+            LOG_DIALOG.debug("..user clicked next, so we'll skip this step. Expected next step is {}", expectedFieldIdx)
+            LOG_DIALOG.debug("..dialog data: {}", dialogData)
             nextStep(confirmQuestion, expectedFieldIdx, dialogData)
+            return@onCallback
           }
+          LOG_DIALOG.debug("..user clicked Ok in the confirmation dialog. Dialog data={}", dialogData)
+          onSuccess(dialogData)
           return@onCallback
+        } else {
+          LOG_DIALOG.debug("..dialog just've started.")
+          replyStep(setup(node).also {saveDialogData(it)}, 0)
         }
-        if (node["c"]?.asBoolean() == true) {
-          val eventData = tg.userSession.state?.asJson() ?: OBJECT_MAPPER.createObjectNode()
-          onSuccess(eventData)
-        }
+      } else {
+        LOG_DIALOG.debug("... input is not applicable")
       }
     }
     tg.onInput(this.id) { msg ->
-      val dialogData = tg.userSession.state?.asJson() ?: OBJECT_MAPPER.createObjectNode()
+      LOG_DIALOG.debug("Received text input from user: {}", msg)
       val expectedField = dialogData["next_field"]?.asText() ?: steps[0].fieldName
       val expectedStepIdx = steps.indexOfFirst { it.fieldName == expectedField }
       if (expectedStepIdx == -1) {
         return@onInput
       }
+      LOG_DIALOG.debug("..this applies to field {}", expectedField)
+      LOG_DIALOG.debug("..dialog data={}", dialogData)
       val expectedStep = steps[expectedStepIdx]
       val isValueValid = when(expectedStep.dataType) {
         DialogDataType.TEXT -> true
@@ -124,7 +129,7 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
     if (expectedStepIdx + 1 < steps.size) {
       replyStep(dialogData, expectedStepIdx + 1)
     } else {
-      tg.userSession.save(this@Dialog.id, dialogData.toString())
+      saveDialogData()
       val summary = steps.joinToString(separator = "\n") {
         "*${it.shortLabel.escapeMarkdown()}*\\: ${dialogData[it.fieldName]?.asText()?.escapeMarkdown() ?: "\\-"}"
       }
@@ -134,9 +139,9 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
       """.trimMargin(),
         buttons = listOf(
           BtnData("Да", callbackData = json {
-            setSection(CbSection.MANAGER)
+            setSection(CbSection.DIALOG)
             setDialogId(this@Dialog.id)
-            put("c", true)
+            setDialogOk()
           }),
           BtnData("Отменить", callbackData = exitPayload ?: "{}")
         ),
@@ -151,11 +156,14 @@ fun ChainBuilder.dialog(id: Int, intro: String, builder: Dialog.()->Unit) {
 }
 
 fun ObjectNode.getDialogId() = this["d"]?.asInt()
-private fun ObjectNode.setDialogId(dialogId: Int) = this.put("d", dialogId)
-
+fun ObjectNode.setDialogId(dialogId: Int) = this.put("d", dialogId)
+fun ObjectNode.hasDialogOk() = this["ok"]?.asBoolean() == true
+fun ObjectNode.setDialogOk() = this.put("ok", true)
 fun String.toDate() =
   Result.runCatching { LocalDateTime.parse(this@toDate.trim().replace(' ', 'T').also { println(it) },
     DateTimeFormatter.ISO_DATE_TIME) }
 
 fun json(prototype: ObjectNode = jacksonObjectMapper().createObjectNode(),
          builder: ObjectNode.() -> Unit) = prototype.deepCopy().apply(builder).toString()
+
+private val LOG_DIALOG = LoggerFactory.getLogger("Bot.Dialog")

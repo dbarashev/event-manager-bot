@@ -74,7 +74,7 @@ enum class MessageSource {
   DIRECT
 }
 
-open class ChainBuilder(internal val update: Update, internal val sendMessage: MessageSender, internal val sessionProvider: UserSessionProvider) {
+open class ChainBuilder(val update: Update, internal val sendMessage: MessageSender, internal val sessionProvider: UserSessionProvider) {
   val messageText = (update.message?.text ?: "").trim()
   val fromUser get() = update.message?.from ?: update.callbackQuery?.from
   val messageId = update.callbackQuery?.message?.messageId ?: update.message?.messageId
@@ -94,7 +94,7 @@ open class ChainBuilder(internal val update: Update, internal val sendMessage: M
   private val documentHandlers = mutableListOf<DocumentHandler>()
   private val handlers = mutableListOf<MessageHandler>()
   var stopped = false
-  private val replies = mutableListOf<BotApiMethod<Serializable>>()
+  internal val replies = mutableListOf<BotApiMethod<Serializable>>()
   internal val docReplies = mutableListOf<SendDocument>()
 
   val callbackJson get() = this.update.callbackQuery?.data?.let {
@@ -333,43 +333,46 @@ fun chain(update: Update,
   try {
     ChainBuilder(update, sender, sessionProvider).apply(handlers).also {
       val replies = it.handle()
-      replies.forEach { reply ->
-        try {
-          sender.send(reply)
-        } catch (ex: TelegramApiRequestException) {
-          ex.printStackTrace()
-          when (reply) {
-            is SendMessage -> {
-              println("Failed to send message to ${reply.chatId}")
-              println("""Message:
-                |
-                |$reply
-              """.trimMargin())
-              sender.send(
-                SendMessage(
-                  reply.chatId,
-                  "Что-то сломалось при отправке ответа."
-                ) as BotApiMethod<Serializable>
-              )
-            }
-
-            else -> println(reply)
-          }
-        }
-      }
-      it.docReplies.forEach { doc ->
-        try {
-          sender.sendDoc(doc)
-        } catch (ex: TelegramApiRequestException) {
-          ex.printStackTrace()
-        }
-      }
+      it.sendReplies()
     }
   } catch (ex: Exception) {
     ex.printStackTrace()
   }
 }
 
+fun ChainBuilder.sendReplies() {
+  replies.forEach { reply ->
+    try {
+      sendMessage.send(reply)
+    } catch (ex: TelegramApiRequestException) {
+      ex.printStackTrace()
+      when (reply) {
+        is SendMessage -> {
+          println("Failed to send message to ${reply.chatId}")
+          println("""Message:
+                |
+                |$reply
+              """.trimMargin())
+          sendMessage.send(
+            SendMessage(
+              reply.chatId,
+              "Что-то сломалось при отправке ответа."
+            ) as BotApiMethod<Serializable>
+          )
+        }
+
+        else -> println(reply)
+      }
+    }
+  }
+  docReplies.forEach { doc ->
+    try {
+      sendMessage.sendDoc(doc)
+    } catch (ex: TelegramApiRequestException) {
+      ex.printStackTrace()
+    }
+  }
+}
 
 private val escapedChars = charArrayOf('_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!')
 private val ESCAPER = object : CharEscaper() {

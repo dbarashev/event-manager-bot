@@ -5,10 +5,7 @@ import com.bardsoftware.embot.db.tables.records.EventviewRecord
 import com.bardsoftware.embot.db.tables.records.OrganizerRecord
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.*
-import com.bardsoftware.libbotanique.BtnData
-import com.bardsoftware.libbotanique.ChainBuilder
-import com.bardsoftware.libbotanique.OBJECT_MAPPER
-import com.bardsoftware.libbotanique.escapeMarkdown
+import com.bardsoftware.libbotanique.*
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.github.michaelbull.result.*
 
@@ -28,37 +25,10 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
     }
     when (node.getCommand()) {
       OrgManagerCommand.LANDING -> {
-        eventOrganizerLanding(tg).onFailure { tg.reply(it) }
+        // handled in the state machine
       }
       OrgManagerCommand.EVENT_INFO -> {
-        node.getEventId()?.let(::getEventRecord)?.let { event ->
-          val participants = event.getParticipants()
-          val participantNames = participants.joinToString(separator = "\n") {
-            """
-              ${it.participantName!!.escapeMarkdown()}\, ${it.participantAge}\. 
-              Связь\: [${it.registrantUsername!!.escapeMarkdown()}](https://t.me/${it.registrantUsername}), [${it.registrantPhone!!.escapeMarkdown()}](tel:${it.registrantPhone!!.escapeMarkdown()})
-              
-              """.trimIndent()
-          }.trim().ifBlank { "пока никто не зарегистрировался" }
-          tg.reply(event.formatDescription("""
-            |$participantNames
-            |
-            |Итого ${participants.size}""".trimMargin()),
-            buttons = listOf(
-              BtnData("Редактировать...", callbackData = json(node) {
-                setCommand(OrgManagerCommand.EVENT_EDIT)
-              }),
-              BtnData("Архивировать", callbackData = json(node) {
-                setCommand(OrgManagerCommand.EVENT_ARCHIVE)
-              }),
-              BtnData("Удалить", callbackData = json(node) {
-                setCommand(OrgManagerCommand.EVENT_DELETE)
-              }),
-              createEscButton()
-            ),
-            isMarkdown = true, isInplaceUpdate = true
-          )
-        }
+        // handled in the state machine
       }
       OrgManagerCommand.EVENT_ADD -> {
         // This is handled in the dialog code
@@ -75,7 +45,7 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
       OrgManagerCommand.EVENT_ARCHIVE -> {
         node.getEventId()?.let {
           archiveEvent(it)
-          eventOrganizerLanding(tg)
+//          eventOrganizerLanding(tg)
         }
       }
       OrgManagerCommand.ORG_SETTINGS -> {
@@ -85,6 +55,7 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
   }
   eventDialog(tg, titleMdwn = "Создаём новое событие\\.", OrgManagerCommand.EVENT_ADD) { input ->
     input.apply {
+      setDialogId(OrgManagerCommand.EVENT_EDIT.id)
       put("org_id", input.getOrganizationId())
       put("series_id", getDefaultSeries(input.getOrganizationId()!!)!!.id)
     }
@@ -92,6 +63,7 @@ fun ParticipantRecord.organizationManagementCallbacks(tg: ChainBuilder) {
   eventDialog(tg, titleMdwn = "Редактируем событие\\.", OrgManagerCommand.EVENT_EDIT) { input ->
     input.getEventId()?.let(::getEventRecord)?.let { event ->
       input.apply {
+        setDialogId(OrgManagerCommand.EVENT_EDIT.id)
         put("org_id", input.getOrganizationId())
         put("series_id", getDefaultSeries(input.getOrganizationId()!!)!!.id)
         put("event_id", event.id)
@@ -111,10 +83,6 @@ fun orgSettingsDialog(tg: ChainBuilder) {
       Настройки организации.
     """.trimIndent()) {
 
-    trigger = json {
-      setSection(CbSection.MANAGER)
-      setCommand(OrgManagerCommand.ORG_SETTINGS)
-    }
     setup = {
       exitPayload = json {
         setSection(CbSection.MANAGER)
@@ -146,10 +114,6 @@ fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand,
       _Процесс можно прервать в любой момент кнопкой "Отменить"_
       """.trimIndent()) {
 
-    trigger = json {
-      setSection(CbSection.MANAGER)
-      setCommand(command)
-    }
     setup = {
       exitPayload = json {
         setSection(CbSection.MANAGER)
@@ -161,10 +125,10 @@ fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand,
     step("start", DialogDataType.DATE, "Дата", "Дата события [YYYY-MM-DD HH:mm]:",
       "Введите дату и время начала в формате YYYY-MM-DD HH:mm. Например, 2023-11-21 09:00.")
     step("limit", DialogDataType.INT, "Участников (max)", "Максимальное количество участников:")
-    confirm("Создаём?") {json ->
+    confirm("Создаём/обновляем?") {json ->
       if (createEvent(json)) {
-        tg.userSession.reset()
         tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
+        tg.userSession.reset()
         Ok(json)
       } else Err("Что-то пошло не так")
     }
@@ -179,57 +143,100 @@ fun archiveEvent(eventId: Int) = txn {
   update(EVENT).set(EVENT.IS_ARCHIVED, true).where(EVENT.ID.eq(eventId)).execute()
 }
 
-fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder): Result<Unit, String> {
-  val orgs = getManagedOrganizations(this.userId!!)
-  return when (orgs.size) {
-    0 -> Err("У вас пока что нет организаторских прав")
-    1 -> {
-      this.eventOrganizerLanding(tg, OrganizerRecord().apply {
+class OrgLandingAction(input: InputData): StateAction {
+  private val orgRecord: OrganizerRecord
+  init {
+    val orgs = getManagedOrganizations(input.user.id.toLong())
+    if (orgs.size == 1) {
+      orgRecord = OrganizerRecord().apply {
         id = orgs[0].get(ORGANIZER.ID)
         title = orgs[0].get(ORGANIZER.TITLE)
         googleSheetId = orgs[0].get(ORGANIZER.GOOGLE_SHEET_ID)
-      })
-      Ok(Unit)
-    }
-    else -> Err("Кажется, у вас более одной организации. Пока что я не умею с этим работать (")
+      }
+    } else throw RuntimeException("Найдено ${orgs.size} управляемых организаций")
   }
-}
-fun ParticipantRecord.eventOrganizerLanding(tg: ChainBuilder, org: OrganizerRecord) {
-  val eventAddBtns = listOf(
-    BtnData("Добавить событие...", callbackData = OBJECT_MAPPER.createObjectNode().apply {
-      setSection(CbSection.MANAGER)
-      setCommand(OrgManagerCommand.EVENT_ADD)
-      setOrganizationId(org.id!!)
-    }.toString())
-  )
-  val eventInfoBtns = getAllEvents(org.id!!).map { eventRecord ->
-    BtnData(eventRecord.title!!, OBJECT_MAPPER.createObjectNode().apply {
-      setSection(CbSection.MANAGER)
-      setCommand(OrgManagerCommand.EVENT_INFO)
-      setOrganizationId(org.id!!)
-      setEventId(eventRecord.id!!)
-    }.toString())
-  }.toList()
-  val escButtons = listOf(
-    BtnData("Настройки...", callbackData = json {
-      setSection(CbSection.MANAGER)
-      setCommand(OrgManagerCommand.ORG_SETTINGS)
-      setOrganizationId(org.id!!)
-    }),
-    returnToFirstLanding()
-  )
-  tg.reply("""
-    *${org.title!!.escapeMarkdown()}*
+
+  override val text get() = TextMessage(
+    """
+    *${orgRecord.title!!.escapeMarkdown()}*
     
     \-\-\-\-
-    Связанная Google\-таблица\: ${org.googleSheetId?.let { "✔" } ?: "нет"}  
+    Связанная Google\-таблица\: ${orgRecord.googleSheetId?.let { "✔" } ?: "нет"}  
     \-\-\-\-
     Используйте кнопки внизу для управления событиями или изменения настроек\.
-    """.trimIndent(),
-    buttons = eventAddBtns + eventInfoBtns + escButtons,
-    maxCols = 1, isInplaceUpdate = true, isMarkdown = true)
+    """.trimIndent(), TextMarkup.MARKDOWN)
+
+  override val buttonTransition get() = ButtonTransition(orgLandingButtons(orgRecord))
 }
 
+class OrgEventInfoAction(private val input: InputData): StateAction {
+  private val event: EventviewRecord
+  private val participants: List<EventteamregistrationviewRecord>
+  private val baseOutputJson: ObjectNode
+  init {
+    event = input.contextJson.getEventId()?.let(::getEventRecord) ?: throw RuntimeException("")
+    participants = event.getParticipants()
+    baseOutputJson = objectNode(input.contextJson) {
+      setEventId(event.id!!)
+      setOrganizationId(event.organizerId!!)
+    }
+  }
+  override val text: TextMessage get() {
+    val participantNames = participants.joinToString(separator = "\n") {
+      """
+      ${it.participantName!!.escapeMarkdown()}\, ${it.participantAge}\. 
+      Связь\: [${it.registrantUsername!!.escapeMarkdown()}](https://t.me/${it.registrantUsername}), [${it.registrantPhone!!.escapeMarkdown()}](tel:${it.registrantPhone!!.escapeMarkdown()})
+      
+      """.trimIndent()
+    }.trim().ifBlank { "пока никто не зарегистрировался" }
+    return TextMessage(
+      event.formatDescription(
+        """
+      |$participantNames
+      |
+      |Итого ${participants.size}""".trimMargin()
+      ), TextMarkup.MARKDOWN
+    )
+  }
+  override val buttonTransition: ButtonTransition
+    get() = ButtonTransition(listOf(
+      "ORG_EVENT_EDIT" to ButtonBuilder({"Редактировать..."},
+        output = { OutputData(objectNode(baseOutputJson) {
+          setSection(CbSection.DIALOG)
+          setDialogId(OrgManagerCommand.EVENT_EDIT.id)
+        }) }),
+      "ORG_EVENT_ARCHIVE" to ButtonBuilder({"Архивировать"}, output = { OutputData(baseOutputJson) }),
+      "ORG_EVENT_DELETE"  to ButtonBuilder({"Удалить"},      output = { OutputData(baseOutputJson)}),
+      "ORG_LANDING"       to ButtonBuilder({"<< Назад"}, output = {OutputData(objectNode {
+        setOrganizationId(event.organizerId!!)
+      })})
+    ))
+
+}
+
+fun orgLandingButtons(org: OrganizerRecord): List<Pair<String, ButtonBuilder>> = listOf(
+  "ORG_EVENT_ADD" to ButtonBuilder({ "Создать событие..." },
+    output = { OutputData(objectNode { setOrganizationId(org.id!!) })
+  })
+) + getAllEvents(org.id!!).map {eventRecord ->
+  "ORG_EVENT_INFO" to ButtonBuilder({eventRecord.title!!},
+    output = { OutputData(objectNode {
+      setOrganizationId(org.id!!)
+      setEventId(eventRecord.id!!)
+    })})
+} + listOf(
+  "ORG_SETTINGS" to ButtonBuilder({"Настройки..."},
+    output = {
+      OutputData(objectNode {
+        setSection(CbSection.DIALOG)
+        setDialogId(OrgManagerCommand.ORG_SETTINGS.id)
+        setOrganizationId(org.id!!)
+      })
+    }
+  )
+) + listOf(
+  "START" to ButtonBuilder({"<< Назад"})
+)
 
 fun getManagedOrganizations(tgUserId: Long) = db {
   selectFrom(ORGANIZERMANAGER.join(ORGANIZER).on(ORGANIZER.ID.eq(ORGANIZERMANAGER.ORGANIZER_ID)))
@@ -298,6 +305,6 @@ private fun createEscButton() =
   }.toString())
 
 private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let(OrgManagerCommand.entries::get) ?: OrgManagerCommand.LANDING
-private fun ObjectNode.setCommand(cmd: OrgManagerCommand) = this.put("c", cmd.ordinal)
+fun ObjectNode.setCommand(cmd: OrgManagerCommand) = this.put("c", cmd.ordinal)
 private fun ObjectNode.setOrganizationId(organizationId: Int) = this.put("o", organizationId)
 private fun ObjectNode.getOrganizationId() = this["o"]?.asInt()
