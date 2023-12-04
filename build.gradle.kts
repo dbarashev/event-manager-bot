@@ -22,6 +22,7 @@ dependencies {
     implementation("com.bardsoftware:libbotanique:1.+")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.7.3")
     implementation("com.github.ajalt.clikt:clikt:4.2.0")
+    implementation("ch.qos.logback:logback-classic:1.4.6")
     implementation("org.telegram:telegrambots:6.5.0")
     implementation("org.telegram:telegrambotsextensions:6.5.0")
     implementation("javax.xml.bind:jaxb-api:2.3.1")
