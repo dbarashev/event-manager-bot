@@ -138,6 +138,7 @@ fun ParticipantRecord.getEventButtons(srcNode: ObjectNode) =
 
 fun EventRecord.formatUncheckedLabel() = """${this.title} / ${this.start!!.toLocalDate()} ${this.start!!.toLocalTime()}"""
 
+fun EventviewRecord.getGeoLocation() = if (primaryLat != null && primaryLat != null) LatLon(primaryLat!!, primaryLon!!) else null
 fun EventviewRecord.formatDescription(registeredParticipantsMdwn: String) =
   """*${title!!.escapeMarkdown()}*
     |${seriesTitle?.escapeMarkdown() ?: ""}
@@ -145,6 +146,8 @@ fun EventviewRecord.formatDescription(registeredParticipantsMdwn: String) =
     | *Организаторы*\: ${organizerTitle?.escapeMarkdown() ?: ""}
     | *Дата*\: ${start!!.toLocalDate().toString().escapeMarkdown()}
     | *Время*\: ${start!!.toLocalTime().toString().escapeMarkdown()}
+    | *Адрес*\: ${primaryAddress ?: "\\-"}
+    | ${getGeoLocation()?.let {"*Геолокация*\\: ${it.toString().escapeMarkdown()} [Google](https\\://google.com/maps/place/${it.toString().escapeMarkdown()})"}}
     | *Max\. участников*\: ${participantLimit?.toString() ?: "\\-"}
     | ${"\\-".repeat(40)}
     | 

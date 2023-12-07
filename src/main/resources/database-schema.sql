@@ -48,6 +48,9 @@ CREATE TABLE Event(
     title VARCHAR NOT NULL DEFAULT '',
     start TIMESTAMP NOT NULL,
     participant_limit INT CHECK ( participant_limit >= 0 ),
+    primary_address TEXT,
+    primary_lat DECIMAL(8, 5) CHECK (primary_lat between -90 and 90),
+    primary_lon DECIMAL(8, 5) CHECK (primary_lon between -180 and 180),
     series_id INT REFERENCES EventSeries,
     is_deleted BOOLEAN DEFAULT false,
     is_archived BOOLEAN DEFAULT false,
@@ -71,7 +74,9 @@ CREATE TABLE EventRegistration(
 );
 
 CREATE VIEW EventView AS
-SELECT E.id, E.title, E.start, E.participant_limit, E.is_deleted, E.is_archived, E.notification_chat_id, T.*
+SELECT E.id, E.title, E.start, E.participant_limit, E.is_deleted, E.is_archived, E.notification_chat_id,
+       E.primary_address, E.primary_lat, E.primary_lon,
+       T.*
 FROM Event E LEFT JOIN (
     SELECT ES.id AS series_id, ES.title AS series_title, O.id AS organizer_id, O.title AS organizer_title
     FROM EventSeries ES JOIN Organizer O on ES.organizer_id = O.id

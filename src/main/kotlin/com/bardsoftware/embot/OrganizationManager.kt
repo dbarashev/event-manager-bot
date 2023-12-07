@@ -31,6 +31,10 @@ fun organizationManagementModule(tg: ChainBuilder) {
         put("title", event.title)
         put("start", event.start.toString())
         put("limit", event.participantLimit)
+        put("primary_address", event.primaryAddress)
+        if (event.primaryLat != null && event.primaryLon != null) {
+          put("primary_latlon", LatLon(event.primaryLat!!, event.primaryLon!!).toString())
+        }
       }
     } ?: input
   }
@@ -85,6 +89,9 @@ fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand,
     step("title", DialogDataType.TEXT, "Название", "Название события:")
     step("start", DialogDataType.DATE, "Дата", "Дата события [YYYY-MM-DD HH:mm]:",
       "Введите дату и время начала в формате YYYY-MM-DD HH:mm. Например, 2023-11-21 09:00.")
+    step("primary_address", DialogDataType.TEXT, "primary_addr", "Адрес [текст]:")
+    step("primary_latlon", DialogDataType.LOCATION, "primary_latlon", "Геолокация:",
+      "Введите геолокацию в виде двух десятичных чисел, разделённых запятой. Первое число -- это широта в интервале от -90 до 90. Второе число -- долгота в интервале от -180 до 180.")
     step("limit", DialogDataType.INT, "Участников (max)", "Максимальное количество участников:")
     confirm("Создаём/обновляем?") {json ->
       if (createEvent(json)) {
@@ -217,15 +224,20 @@ fun getDefaultSeries(organizerId: Int) = db {
 fun createEvent(eventData: ObjectNode): Boolean =
   db {
     val title = eventData["title"]?.asText() ?: return@db false
-    val start = eventData["start"]?.asText()?.toDate()?.getOrNull() ?: return@db false
+    val start = eventData["start"]?.asText()?.toDate()?.getOrElse { null } ?: return@db false
     val seriesId = eventData["series_id"]?.asInt() ?: return@db false
     val limit = eventData["limit"]?.asInt()
+    val primaryAddress = eventData["primary_address"]?.asText()
+    val primaryLatLon = eventData["primary_latlon"]?.asText()?.toLatLon()?.getOrElse { null }
     eventData["event_id"]?.asInt()?.let {eventId ->
      update(EVENT)
        .set(EVENT.TITLE, title)
        .set(EVENT.START, start)
        .set(EVENT.SERIES_ID, seriesId)
        .set(EVENT.PARTICIPANT_LIMIT, limit)
+       .set(EVENT.PRIMARY_ADDRESS, primaryAddress)
+       .set(EVENT.PRIMARY_LAT, primaryLatLon?.lat)
+       .set(EVENT.PRIMARY_LON, primaryLatLon?.lon)
        .where(EVENT.ID.eq(eventId))
        .execute()
     } ?: run {

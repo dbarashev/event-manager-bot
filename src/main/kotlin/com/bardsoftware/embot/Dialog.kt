@@ -3,15 +3,23 @@ package com.bardsoftware.embot
 import com.bardsoftware.libbotanique.*
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.github.michaelbull.result.Ok
 import com.github.michaelbull.result.Result
+import com.github.michaelbull.result.onFailure
+import com.github.michaelbull.result.runCatching
 import org.slf4j.LoggerFactory
+import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 enum class DialogDataType {
-  TEXT, INT, NUMBER, DATE
+  TEXT, INT, NUMBER, DATE, LOCATION
 }
 
+data class LatLon(val lat: BigDecimal, val lon: BigDecimal) {
+  override fun toString() = "$lat,$lon"
+
+}
 data class DialogStep(
   val fieldName: String,
   val question: String,
@@ -113,7 +121,8 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
         DialogDataType.TEXT -> true
         DialogDataType.INT -> msg.toIntOrNull()?.takeIf { it >= 0 } != null
         DialogDataType.NUMBER -> msg.toBigDecimalOrNull() != null
-        DialogDataType.DATE -> msg.toDate().isSuccess
+        DialogDataType.DATE -> msg.toDate() is Ok
+        DialogDataType.LOCATION -> msg.toLatLon() is Ok
       }
       if (!isValueValid) {
         println("value $msg is not valid, reply: ${expectedStep.invalidValueReply}")
@@ -159,9 +168,13 @@ fun ObjectNode.getDialogId() = this["d"]?.asInt()
 fun ObjectNode.setDialogId(dialogId: Int) = this.put("d", dialogId)
 fun ObjectNode.hasDialogOk() = this["ok"]?.asBoolean() == true
 fun ObjectNode.setDialogOk() = this.put("ok", true)
-fun String.toDate() =
-  Result.runCatching { LocalDateTime.parse(this@toDate.trim().replace(' ', 'T').also { println(it) },
-    DateTimeFormatter.ISO_DATE_TIME) }
+fun String.toDate() = Result.runCatching {
+  LocalDateTime.parse(this@toDate.trim().replace(' ', 'T'), DateTimeFormatter.ISO_DATE_TIME)
+}
+fun String.toLatLon() = Result.runCatching {
+  val (strLat, strLon) = this@toLatLon.trim().split(regex = """\s*,\s*""".toRegex(), limit=2)
+  LatLon(strLat.toBigDecimal(), strLon.toBigDecimal())
+}.onFailure { it.printStackTrace() }
 
 fun json(prototype: ObjectNode = jacksonObjectMapper().createObjectNode(),
          builder: ObjectNode.() -> Unit) = prototype.deepCopy().apply(builder).toString()
