@@ -3,6 +3,7 @@ package com.bardsoftware.embot
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.*
 import com.bardsoftware.libbotanique.*
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.github.michaelbull.result.Ok
 import com.github.michaelbull.result.onFailure
@@ -156,6 +157,33 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setCommand(CbTeamCommand.ADD_DIALOG)
     }
   }
+  state("TEAM_MEMBER_INFO") {
+    trigger {
+      setSection(CbSection.TEAM)
+      setCommand(CbTeamCommand.MEMBER_INFO)
+    }
+    action(id) { Ok(TeamMemberInfoAction(it)) }
+  }
+  state("TEAM_EDIT_DIALOG") {
+    isIgnored = true
+    trigger {
+      setSection(CbSection.DIALOG)
+      setCommand(CbTeamCommand.EDIT_DIALOG)
+    }
+  }
+  state("TEAM_MEMBER_DELETE") {
+    trigger {
+      setSection(CbSection.TEAM)
+      setCommand(CbTeamCommand.MEMBER_DELETE)
+    }
+    action(id) {Ok(SimpleAction(
+      "Товарищ вычеркнут из команды. Информация о его мероприятиях осталась в системе.",
+      "TEAM_LANDING", it) {
+      val memberId = it.contextJson.getTeamMemberId() ?: return@SimpleAction
+      val leaderId = it.contextJson.getTeamLeaderId() ?: return@SimpleAction
+      deleteTeamMember(memberId, leaderId)
+    })}
+  }
   state("PARTICIPANT_EVENTS") {
     isIgnored = true
     trigger {
@@ -242,5 +270,4 @@ fun ObjectNode.getSection() = this[CB_SECTION]?.asInt()?.let(CbSection.values():
 fun ObjectNode.setSection(section: CbSection) = this.apply {
   put(CB_SECTION, section.id)
 }
-
 private val LOG_INPUT = LoggerFactory.getLogger("Bot.Input")

@@ -54,7 +54,7 @@ class RegistrationFlow(
     val allMembers = storageApi.getTeam(registrant)
 
     val candidateIds = storageApi.getCandidateIdList()?.toMutableList() ?: mutableListOf()
-    payload.getParticipantId()?.let {
+    payload.getTeamMemberId()?.let {
       candidateIds.add(it)
       storageApi.setCandidateIdList(candidateIds)
       payload.clearParticipantId()
@@ -197,6 +197,5 @@ fun createStorageApiProd(tg: ChainBuilder): RegistrationFlowStorageApi =
 private fun ObjectNode.hasConfirmation() = this["y"]?.asBoolean() ?: false
 private fun ObjectNode.setConfirmation() = this.put("y", true)
 
-private fun ObjectNode.getParticipantId() = this["id"]?.asInt()
 private fun ObjectNode.setParticipantId(id: Int) = this.put("id", id)
 private fun ObjectNode.clearParticipantId() = this.remove("id")
