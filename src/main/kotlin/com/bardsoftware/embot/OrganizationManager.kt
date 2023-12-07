@@ -9,7 +9,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.github.michaelbull.result.*
 
 enum class OrgManagerCommand {
-  LANDING, EVENT_INFO, EVENT_ADD, EVENT_DELETE, EVENT_EDIT, EVENT_ARCHIVE, ORG_SETTINGS;
+  LANDING, EVENT_INFO, EVENT_ADD, EVENT_DELETE, EVENT_EDIT, EVENT_ARCHIVE, EVENT_PARTICIPANT_LIST, EVENT_PARTICIPANT_ADD, EVENT_PARTICIPANT_INFO, ORG_SETTINGS,
+  EVENT_PARTICIPANT_DELETE;
 
   val id get() = ordinal + 200
 }
@@ -189,20 +190,42 @@ class OrgEventInfoAction(private val input: InputData): StateAction {
   }
   override val buttonTransition: ButtonTransition
     get() = ButtonTransition(listOf(
-      "ORG_EVENT_EDIT" to ButtonBuilder({"Редактировать..."},
+      "ORG_EVENT_EDIT" to ButtonBuilder({"Редактировать событие..."},
         output = { OutputData(objectNode(baseOutputJson) {
           setSection(CbSection.DIALOG)
           setDialogId(OrgManagerCommand.EVENT_EDIT.id)
         }) }),
-      "ORG_EVENT_ARCHIVE" to ButtonBuilder({"Архивировать"}, output = { OutputData(baseOutputJson) }),
-      "ORG_EVENT_DELETE"  to ButtonBuilder({"Удалить"},      output = { OutputData(baseOutputJson)}),
-      "ORG_LANDING"       to ButtonBuilder({"<< Назад"}, output = {OutputData(objectNode {
+      "ORG_EVENT_PARTICIPANT_LIST" to ButtonBuilder({"Участники >>"}, output = { OutputData(baseOutputJson) }),
+      "ORG_EVENT_ARCHIVE"          to ButtonBuilder({"Архивировать"}, output = { OutputData(baseOutputJson) }),
+      "ORG_EVENT_DELETE"           to ButtonBuilder({"Удалить"},      output = { OutputData(baseOutputJson)}),
+      "ORG_LANDING"                to ButtonBuilder({"<< Назад"}, output = {OutputData(objectNode {
         setOrganizationId(event.organizerId!!)
       })})
     ))
 
 }
 
+class OrgEventParticipantListAction(private val participants: List<EventteamregistrationviewRecord>): StateAction {
+  constructor(input: InputData): this(
+    input.contextJson.getEventId()?.let(::getEventRecord)?.getParticipants() ?: throw RuntimeException("Can't fetch the list of participants from the database")
+  )
+
+  override val text = TextMessage("Здесь вы можете добавить или удалить участников события")
+  override val buttonTransition = ButtonTransition(
+    buttons = participants.map {participant ->
+      "ORG_EVENT_PARTICIPANT_INFO" to ButtonBuilder({participant.participantName!!}) {
+        OutputData(objectNode {
+          setAll<ObjectNode>(it.contextJson)
+          setParticipantId(participant.participantId!!)
+        })
+      }
+    } + listOf(
+      "ORG_EVENT_PARTICIPANT_ADD" to ButtonBuilder({"Добавить участника >>"}),
+      "ORG_EVENT_INFO" to ButtonBuilder({"<< Назад"})
+    )
+  )
+
+}
 
 
 fun getManagedOrganizations(tgUserId: Long) = db {
@@ -258,7 +281,7 @@ fun getOrg(orgId: Int) = db {
 }
 
 fun updateOrg(json: ObjectNode) = runCatching {
-  db {
+  txn {
     val updatedRows = update(ORGANIZER)
       .set(ORGANIZER.TITLE, json[ORGANIZER.TITLE.name]?.asText())
       .set(ORGANIZER.GOOGLE_SHEET_ID, json[ORGANIZER.GOOGLE_SHEET_ID.name]?.asText())
@@ -270,6 +293,12 @@ fun updateOrg(json: ObjectNode) = runCatching {
   }
 }.mapError { it.message ?: "Что-то пошло не так" }
 
+fun unregisterParticipant(eventId: Int, participantId: Int) = runCatching {
+  txn {
+    println("!!!!!!!! delete eventId=$eventId partici[antId=$participantId")
+    deleteFrom(EVENTREGISTRATION).where(EVENTREGISTRATION.PARTICIPANT_ID.eq(participantId).and(EVENTREGISTRATION.EVENT_ID.eq(eventId))).execute()
+  }
+}
 private fun createEscButton() =
   BtnData("<< Назад", callbackData = OBJECT_MAPPER.createObjectNode().apply {
     setSection(CbSection.MANAGER)
@@ -280,3 +309,6 @@ private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let(OrgManagerCommand.
 fun ObjectNode.setCommand(cmd: OrgManagerCommand) = this.put("c", cmd.ordinal)
 private fun ObjectNode.setOrganizationId(organizationId: Int) = this.put("o", organizationId)
 private fun ObjectNode.getOrganizationId() = this["o"]?.asInt()
+
+private fun ObjectNode.setParticipantId(id: Int) = this.put("pid", id)
+fun ObjectNode.getParticipantId() = this["pid"]?.asInt()

@@ -109,6 +109,43 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setDialogId(OrgManagerCommand.EVENT_EDIT.id)
     }
   }
+  state("ORG_EVENT_PARTICIPANT_LIST") {
+    trigger {
+      setSection(CbSection.MANAGER)
+      setCommand(OrgManagerCommand.EVENT_PARTICIPANT_LIST)
+    }
+    action(id) { Ok(OrgEventParticipantListAction(it)) }
+  }
+  state("ORG_EVENT_PARTICIPANT_ADD") {
+    trigger {
+      setSection(CbSection.MANAGER)
+      setCommand(OrgManagerCommand.EVENT_PARTICIPANT_ADD)
+    }
+  }
+  state("ORG_EVENT_PARTICIPANT_INFO") {
+    trigger {
+      setSection(CbSection.MANAGER)
+      setCommand(OrgManagerCommand.EVENT_PARTICIPANT_INFO)
+    }
+    action(id) {input -> Ok(ButtonsAction(
+      text = TextMessage("Здесь вы можете отменить регистрацию участника"),
+      buttons = listOf(
+        "ORG_EVENT_PARTICIPANT_LIST" to ButtonBuilder(label = { "<< Назад" }),
+        "ORG_EVENT_PARTICIPANT_DELETE" to ButtonBuilder(label = { "Отменить регистрацию" }),
+      )))
+    }
+  }
+  state("ORG_EVENT_PARTICIPANT_DELETE") {
+    trigger {
+      setSection(CbSection.MANAGER)
+      setCommand(OrgManagerCommand.EVENT_PARTICIPANT_DELETE)
+    }
+    action(id) { Ok(SimpleAction("Регистрация участника отменена", "ORG_EVENT_PARTICIPANT_LIST", it) {
+      val eventId = it.contextJson.getEventId() ?: return@SimpleAction
+      val participantId = it.contextJson.getParticipantId() ?: return@SimpleAction
+      unregisterParticipant(eventId, participantId)
+    })}
+  }
   state("ORG_EVENT_DELETE") {
     trigger {
       setSection(CbSection.MANAGER)
