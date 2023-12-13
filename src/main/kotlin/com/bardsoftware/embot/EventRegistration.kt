@@ -4,10 +4,7 @@ import com.bardsoftware.embot.db.tables.records.EventRecord
 import com.bardsoftware.embot.db.tables.records.EventviewRecord
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.*
-import com.bardsoftware.libbotanique.BtnData
-import com.bardsoftware.libbotanique.ChainBuilder
-import com.bardsoftware.libbotanique.OBJECT_MAPPER
-import com.bardsoftware.libbotanique.escapeMarkdown
+import com.bardsoftware.libbotanique.*
 import com.fasterxml.jackson.databind.node.ObjectNode
 import org.jooq.impl.DSL
 import org.jooq.types.DayToSecond
@@ -27,7 +24,10 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       CbEventCommand.LANDING -> {
         // -------------------------------------------------------------------------
         tg.reply("Ваши события:",
-          buttons = participant.getEventButtons(node),
+          buttons = participant.getEventButtons(node) + BtnData("<< Назад", callbackData = json {
+            setSection(CbSection.PARTICIPANT)
+            setCommand(CbEventCommand.LANDING)
+          }),
           maxCols = 1, isInplaceUpdate = true)
         // -------------------------------------------------------------------------
       }
@@ -90,11 +90,12 @@ fun showEvent(
     }
   // -------------------------------------------------------------------------
   tg.reply(
-    event.formatDescription(registeredLabel),
+    event.formatDescription(registeredLabel, isOrg = false),
     buttons = btns + returnToEventRegistrationLanding(),
     isMarkdown = true,
     isInplaceUpdate = isInplaceUpdate
   )
+  tg.sendReplies()
   // -------------------------------------------------------------------------
   tg.userSession.reset()
 }
@@ -136,28 +137,7 @@ fun ParticipantRecord.getEventButtons(srcNode: ObjectNode) =
     )
   }.toList()
 
-fun EventRecord.formatUncheckedLabel() = """${this.title} / ${this.start!!.toLocalDate()} ${this.start!!.toLocalTime()}"""
 
-fun EventviewRecord.getGeoLocation() = if (primaryLat != null && primaryLat != null) LatLon(primaryLat!!, primaryLon!!) else null
-fun EventviewRecord.formatDescription(registeredParticipantsMdwn: String) =
-  """*${title!!.escapeMarkdown()}*
-    |${seriesTitle?.escapeMarkdown() ?: ""}
-    | ${"\\-".repeat(40)}
-    | *Организаторы*\: ${organizerTitle?.escapeMarkdown() ?: ""}
-    | *Дата*\: ${start!!.toLocalDate().toString().escapeMarkdown()}
-    | *Время*\: ${start!!.toLocalTime().toString().escapeMarkdown()}
-    | *Адрес*\: ${primaryAddress ?: "\\-"}
-    | ${getGeoLocation()?.let {"*Геолокация*\\: ${it.toString().escapeMarkdown()} [Google](https\\://google.com/maps/place/${it.toString().escapeMarkdown()})"}}
-    | *Max\. участников*\: ${participantLimit?.toString() ?: "\\-"}
-    | ${"\\-".repeat(40)}
-    | 
-    | *Зарегистрированы*\: 
-    | ${registeredParticipantsMdwn}
-    | ${"\\-".repeat(40)}
-    | *Ссылка для регистрации*\: [${this.registrationLink().escapeMarkdown()}]
-  """.trimMargin()
-
-fun EventviewRecord.registrationLink() = """https://t.me/${System.getenv("TG_BOT_USERNAME")}?start=${this.id}"""
 fun EventviewRecord.register(registrant: ParticipantRecord, participant: ParticipantRecord) = txn {
   val subscriptionId = selectFrom(EVENTSERIESSUBSCRIPTION)
     .where(EVENTSERIESSUBSCRIPTION.SERIES_ID.eq(this@register.seriesId)
@@ -178,6 +158,7 @@ fun EventviewRecord.unregister(participant: ParticipantRecord) = db {
 fun returnToEventRegistrationLanding() =
   BtnData("<< Назад", callbackData = OBJECT_MAPPER.createObjectNode().apply {
     setSection(CbSection.EVENTS)
+    setCommand(CbEventCommand.LANDING)
   }.toString())
 
 fun ObjectNode.getEventId() = this["e"]?.asInt()

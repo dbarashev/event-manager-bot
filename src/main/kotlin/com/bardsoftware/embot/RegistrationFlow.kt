@@ -6,6 +6,7 @@ import com.bardsoftware.embot.db.tables.references.EVENTREGISTRATION
 import com.bardsoftware.embot.db.tables.references.EVENTSERIESSUBSCRIPTION
 import com.bardsoftware.libbotanique.BtnData
 import com.bardsoftware.libbotanique.ChainBuilder
+import com.bardsoftware.libbotanique.objectNode
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -27,6 +28,7 @@ data class RegistrationFlowOutputApi(
   val close: (payload: ObjectNode) -> Unit
 )
 
+class EventRegisterAction
 class RegistrationFlow(
   private val storageApi: RegistrationFlowStorageApi,
   private val outputApi: RegistrationFlowOutputApi) {
@@ -40,7 +42,7 @@ class RegistrationFlow(
         if (registrant.hasMissingSettings()) {
           outputApi.sendRedirectToSettings(registrant)
         } else {
-          outputApi.close(jacksonObjectMapper().createObjectNode().apply {
+          outputApi.close(objectNode {
             setEventId(event.id!!)
             putArray("participant_ids").let { arrayNode ->
               participantIds.forEach(arrayNode::add)
@@ -63,23 +65,28 @@ class RegistrationFlow(
     // -------------------------------------------------------------------------
     val remainingMembers = allMembers.filter { member  -> candidates.find { it.id == member.id } == null }
     val buttons =
-      listOf(
-        BtnData("Новый участник...", callbackData = json(payload) {
-          setSection(CbSection.TEAM)
-          setCommand(CbTeamCommand.ADD_DIALOG)
-          set<ObjectNode>("esc", payload)
-        })
-      ) + remainingMembers.map { member ->
+      remainingMembers.map { member ->
         BtnData("${member.displayName}, ${member.age}", callbackData = json(payload) {
-          put("id", member.id)
+          setTeamMemberId(member.id!!)
         })
       }.toList() + listOf(
         BtnData("Себя", callbackData = json(payload) {
-          put("id", registrant.id)
+          setTeamMemberId(registrant.id!!)
+        }),
+        BtnData("Другого человека...", callbackData = json(payload) {
+          setSection(CbSection.TEAM)
+          setCommand(CbTeamCommand.ADD_DIALOG)
+            //set<ObjectNode>("esc", payload)
+        }),
+        BtnData("✔ OK", callbackData = json(payload) {
+          setConfirmation()
+        }),
+        BtnData("<< Назад", callbackData = json {
+          setSection(CbSection.EVENTS)
+          setCommand(CbEventCommand.LIST)
+          setEventId(event.id!!)
         })
-      ) + listOf(BtnData("OK >>", callbackData = json(payload) {
-        setConfirmation()
-      }))
+      )
     outputApi.sendWhomAdd(candidates, buttons)
       // -------------------------------------------------------------------------
   }
@@ -92,6 +99,7 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
         BtnData("<< Назад", callbackData = json {
           setSection(CbSection.EVENTS)
           setCommand(CbEventCommand.LIST)
+          inputPayload.getEventId()?.let(this::setEventId)
         }),
       ), isInplaceUpdate = true)
       payload.getEventId()?.let {eventId ->
@@ -114,21 +122,20 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
         it.displayName!!
       }
       val msg = if (names.isNotBlank()) {
-        """Будут зарегистрированы: $names
-          |
-          |Чтобы завершить регистрацию, нажмите кнопку ОК.
+        """
+          |*Нажмите кнопку ОК* чтобы зарегистрировать этот список: 
+          |$names
         """.trimMargin()
       } else {
         """
-          Выберите одного или нескольких человек для регистрации. 
-          Выбирайте только тех, кто действительно будет участвовать. 
-          Если нужно, создайте нового участника, например ребенка, кнопкой "Новый участник..."
+          \- Составьте список людей для регистрации, используя кнопки. Вносите в него только тех, кто действительно будет участвовать. 
+          \- Если нужно, создайте нового участника, например ребенка, кнопкой "Другого человека..."
         """.trimIndent()
       }
       tg.reply(
         """$msg
         |
-        |Кого добавить?""".trimMargin(),
+        |Кого добавить в список?""".trimMargin(),
         buttons = buttons,
         maxCols = 1,
         isInplaceUpdate = true
@@ -141,7 +148,7 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
         }),
         BtnData("<< К событиям", callbackData = json {
           setSection(CbSection.EVENTS)
-          setCommand(CbEventCommand.LIST)
+          setCommand(CbEventCommand.LANDING)
         })
       ), isInplaceUpdate = true)
     }
@@ -197,5 +204,4 @@ fun createStorageApiProd(tg: ChainBuilder): RegistrationFlowStorageApi =
 private fun ObjectNode.hasConfirmation() = this["y"]?.asBoolean() ?: false
 private fun ObjectNode.setConfirmation() = this.put("y", true)
 
-private fun ObjectNode.setParticipantId(id: Int) = this.put("id", id)
 private fun ObjectNode.clearParticipantId() = this.remove("id")

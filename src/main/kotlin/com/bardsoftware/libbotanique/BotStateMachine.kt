@@ -10,7 +10,7 @@ data class TgUser(val displayName: String, val id: String)
 data class InputData(val stateJson: ObjectNode, val contextJson: ObjectNode, val user: TgUser)
 data class OutputData(val contextJson: ObjectNode)
 
-class State(val id: String) {
+class State(val id: String, private val stateMachine: BotStateMachine) {
   private val requiredNode = jacksonObjectMapper().createObjectNode()
   private val requiredPredicates = mutableMapOf<String, (JsonNode)->Boolean>()
 
@@ -55,11 +55,33 @@ class State(val id: String) {
     }
   }
 
+  fun action(code: (InputData) -> StateAction) {
+    stateMachine.action(id) { runCatching { code(it) }.mapError { it.message!! }}
+  }
+
+  fun menu(code: (ButtonStateBuilder).(InputData) -> Unit) {
+    stateMachine.action(id) { input -> runCatching {
+      val builder = ButtonStateBuilder().apply {
+        this.code(input)
+      }
+      ButtonsAction(
+        text = if (builder.markdown.isNotBlank()) TextMessage(builder.markdown, TextMarkup.MARKDOWN) else TextMessage(builder.text),
+        buttons = builder.buttonList
+      )
+    }.mapError { it.message!! }}
+  }
+
   override fun toString(): String {
     return "State(id='$id', requiredNode=$requiredNode, isSubset=$isSubset, isIgnored=$isIgnored)"
   }
+}
 
-
+class ButtonStateBuilder(var text: String = "", var markdown: String = "", var buttonList: List<Pair<String, ButtonBuilder>> = emptyList()) {
+  fun buttons(vararg buttons: Pair<String, String>) {
+    buttonList = buttons.map { (label, outState) ->
+      outState to ButtonBuilder(label = {label})
+    }
+  }
 }
 
 fun identityOutput(input: InputData) = OutputData(input.contextJson)
@@ -115,7 +137,7 @@ class BotStateMachine {
   fun getState(id: String) = states[id]
 
   fun state(id: String, code: State.()->Unit) {
-    registerState(State(id).apply(code))
+    registerState(State(id, this).apply(code))
   }
 
   fun registerState(state: State) {

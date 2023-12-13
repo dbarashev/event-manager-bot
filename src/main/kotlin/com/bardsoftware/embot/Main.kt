@@ -45,13 +45,13 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
     trigger {
       setSection(CbSection.LANDING)
     }
-    action(id) {input -> Ok(ButtonsAction(
-      text = TextMessage("Привет, ${input.user.displayName}!"),
-      buttons = listOf(
-        "ORG_LANDING" to         ButtonBuilder(label = { "Организатор >>" }),
-        "PARTICIPANT_LANDING" to ButtonBuilder(label = { "Участник >>" }),
-        "SETTINGS_LANDING" to    ButtonBuilder(label = { "Настройки >>" })
-      )))
+    menu {
+      text = "Привет, ${it.user.displayName}!"
+      buttons(
+        "Организатор >>" to "ORG_LANDING",
+        "Участник >>"    to "PARTICIPANT_LANDING",
+        "Настройки >>"   to "SETTINGS_LANDING"
+      )
     }
   }
 
@@ -60,9 +60,7 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.LANDING)
     }
-    action(id) {
-      Ok(OrgLandingAction(it))
-    }
+    action(::OrgLandingAction)
   }
 
   state("ORG_EVENT_INFO") {
@@ -70,9 +68,7 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_INFO)
     }
-    action(id) {
-      Ok(OrgEventInfoAction(it))
-    }
+    action(::OrgEventInfoAction)
   }
   state("SETTINGS_LANDING") {
     trigger {
@@ -91,9 +87,9 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_ARCHIVE)
     }
-    action(id) {Ok(SimpleAction("Событие перемещено в архив", "ORG_LANDING", it) {
+    action { SimpleAction("Событие перемещено в архив", "ORG_LANDING", it) {
       it.contextJson.getEventId()!!.let(::archiveEvent)
-    })}
+    }}
   }
   state("ORG_EVENT_ADD") {
     isIgnored = true
@@ -114,7 +110,7 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_PARTICIPANT_LIST)
     }
-    action(id) { Ok(OrgEventParticipantListAction(it)) }
+    action(::OrgEventParticipantListAction)
   }
   state("ORG_EVENT_PARTICIPANT_ADD") {
     trigger {
@@ -127,12 +123,12 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_PARTICIPANT_INFO)
     }
-    action(id) {input -> Ok(ButtonsAction(
-      text = TextMessage("Здесь вы можете отменить регистрацию участника"),
-      buttons = listOf(
-        "ORG_EVENT_PARTICIPANT_LIST" to ButtonBuilder(label = { "<< Назад" }),
-        "ORG_EVENT_PARTICIPANT_DELETE" to ButtonBuilder(label = { "Отменить регистрацию" }),
-      )))
+    menu {
+      text = "Здесь вы можете отменить регистрацию участника"
+      buttons(
+        "Отменить регистрацию" to "ORG_EVENT_PARTICIPANT_DELETE",
+        "<< Назад"             to "ORG_EVENT_PARTICIPANT_LIST",
+      )
     }
   }
   state("ORG_EVENT_PARTICIPANT_DELETE") {
@@ -140,20 +136,20 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_PARTICIPANT_DELETE)
     }
-    action(id) { Ok(SimpleAction("Регистрация участника отменена", "ORG_EVENT_PARTICIPANT_LIST", it) {
+    action { SimpleAction("Регистрация участника отменена", "ORG_EVENT_PARTICIPANT_LIST", it) {
       val eventId = it.contextJson.getEventId() ?: return@SimpleAction
       val participantId = it.contextJson.getParticipantId() ?: return@SimpleAction
       unregisterParticipant(eventId, participantId)
-    })}
+    }}
   }
   state("ORG_EVENT_DELETE") {
     trigger {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.EVENT_DELETE)
     }
-    action(id) {Ok(SimpleAction("Событие перемещено в помойку", "ORG_LANDING", it) {
+    action {SimpleAction("Событие перемещено в помойку", "ORG_LANDING", it) {
       it.contextJson.getEventId()!!.let(::deleteEvent)
-    })}
+    }}
   }
   state("ORG_SETTINGS") {
     trigger {
@@ -166,26 +162,28 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.PARTICIPANT)
       setCommand(CbEventCommand.LANDING)
     }
-    action(id) { Ok(ButtonsAction(
-      text = TextMessage("""
+    menu {
+      markdown = """
+        *Кабинет участника мероприятия*
+        ${"—".repeat(20)}
         Что тут можно делать?
     
         *Моя команда* — тут можно добавить участника мероприятий, у которого нет своего телеграма, например вашего ребенка\.
         *Мои события* — тут можно регистрироваться на доступные вам мероприятия\.
-      """.trimIndent(), TextMarkup.MARKDOWN),
-      buttons = listOf(
-        "TEAM_LANDING" to        ButtonBuilder(label = {"Моя команда >>"}),
-        "PARTICIPANT_EVENTS" to  ButtonBuilder(label = {"Мои события >>"}),
-        "PARTICIPANT_LANDING" to ButtonBuilder(label = {"<< Назад"})
-      ),
-    ))}
+      """.trimIndent()
+      buttons(
+        "Моя команда >>" to "TEAM_LANDING",
+        "Мои события >>" to "PARTICIPANT_EVENTS",
+        "<< Назад"       to "START"
+      )
+    }
   }
   state("TEAM_LANDING") {
     trigger {
       setSection(CbSection.TEAM)
       setCommand(CbTeamCommand.LANDING)
     }
-    action(id) { Ok(TeamLandingAction(it))}
+    action(::TeamLandingAction)
   }
   state("TEAM_MEMBER_ADD") {
     isIgnored = true
@@ -199,7 +197,7 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.TEAM)
       setCommand(CbTeamCommand.MEMBER_INFO)
     }
-    action(id) { Ok(TeamMemberInfoAction(it)) }
+    action(::TeamMemberInfoAction)
   }
   state("TEAM_EDIT_DIALOG") {
     isIgnored = true
@@ -213,19 +211,26 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.TEAM)
       setCommand(CbTeamCommand.MEMBER_DELETE)
     }
-    action(id) {Ok(SimpleAction(
+    action { SimpleAction(
       "Товарищ вычеркнут из команды. Информация о его мероприятиях осталась в системе.",
       "TEAM_LANDING", it) {
       val memberId = it.contextJson.getTeamMemberId() ?: return@SimpleAction
       val leaderId = it.contextJson.getTeamLeaderId() ?: return@SimpleAction
       deleteTeamMember(memberId, leaderId)
-    })}
+    }}
   }
   state("PARTICIPANT_EVENTS") {
     isIgnored = true
     trigger {
       setSection(CbSection.EVENTS)
       setCommand(CbTeamCommand.LANDING)
+    }
+  }
+  state("PARTICIPANT_REGISTER") {
+    trigger {
+      setSection(CbSection.EVENTS)
+      setCommand(CbEventCommand.REGISTER)
+      isSubset = true
     }
   }
 }
@@ -269,6 +274,7 @@ fun processMessage(update: Update, sender: MessageSender) {
       participant.eventRegistrationCallbacks(this)
       participant.teamManagementCallbacks(this)
       participant.settingsModule(this)
+      participant.deepLinkLanding(tg)
 
     }
   }
@@ -302,6 +308,15 @@ fun getOrCreateParticipant(tgUserId: Long, tgUsername: String, orgId: Int): Part
 fun findParticipant(id: Int): ParticipantRecord? = db {
   selectFrom(PARTICIPANT).where(PARTICIPANT.ID.eq(id)).fetchOne()
 }
+
+fun ParticipantRecord.deepLinkLanding(tg: ChainBuilder) {
+  println("deepLinkHandling: message=${tg.messageText}")
+  tg.messageText.removePrefix("/start").trim().toIntOrNull()?.let(::getEventRecord)?.let { event ->
+    println("event=$event")
+    showEvent(this, event, tg, isInplaceUpdate = false)
+  }
+}
+
 
 fun ObjectNode.getSection() = this[CB_SECTION]?.asInt()?.let(CbSection.values()::get) ?: CbSection.LANDING
 fun ObjectNode.setSection(section: CbSection) = this.apply {

@@ -181,10 +181,11 @@ class OrgEventInfoAction(private val input: InputData): StateAction {
     }.trim().ifBlank { "пока никто не зарегистрировался" }
     return TextMessage(
       event.formatDescription(
-        """
-      |$participantNames
-      |
-      |Итого ${participants.size}""".trimMargin()
+        isOrg = true,
+        registeredParticipantsMdwn = """
+          |$participantNames
+          |
+          |Итого ${participants.size}""".trimMargin()
       ), TextMarkup.MARKDOWN
     )
   }

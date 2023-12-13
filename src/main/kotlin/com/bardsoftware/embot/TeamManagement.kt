@@ -175,7 +175,7 @@ private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let {CbTeamCommand.ent
 fun ObjectNode.setCommand(command: CbTeamCommand) = this.put("c", command.id)
 
 fun ObjectNode.getTeamMemberId() = this["tmid"]?.asInt()
-private fun ObjectNode.setTeamMemberId(id: Int) = this.put("tmid", id)
+fun ObjectNode.setTeamMemberId(id: Int) = this.put("tmid", id)
 
 fun ObjectNode.getTeamLeaderId() = this["tlid"]?.asInt()
 private fun ObjectNode.setTeamLeaderId(id: Int) = this.put("tlid", id)
