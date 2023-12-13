@@ -10,6 +10,22 @@ import org.jooq.impl.DSL
 import org.jooq.types.DayToSecond
 import java.time.Duration
 
+class ParticipantEventsAction(private val participant: ParticipantRecord): StateAction {
+  constructor(inputData: InputData): this(getOrCreateParticipant(inputData.user.id.toLong(), inputData.user.username, 1))
+  override val text get() = TextMessage("Ваши события:")
+  override val buttonTransition get() = ButtonTransition(
+    buttons = getAvailableEvents(participant).map { eventRecord ->
+      "PARTICIPANT_SHOW_EVENT" to ButtonBuilder({ eventRecord.formatUncheckedLabel() }) {
+        OutputData(objectNode {
+          setEventId(eventRecord.id!!)
+        }
+      )}
+    }.toList() + listOf(
+      "PARTICIPANT_LANDING" to ButtonBuilder({"<< Назад"})
+    )
+  )
+}
+
 fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
   val participant = this
   tg.onCallback { node ->
@@ -21,16 +37,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
     val event = node.getEventId()?.let(::getEventRecord)
 
     when(node.getCommand()) {
-      CbEventCommand.LANDING -> {
-        // -------------------------------------------------------------------------
-        tg.reply("Ваши события:",
-          buttons = participant.getEventButtons(node) + BtnData("<< Назад", callbackData = json {
-            setSection(CbSection.PARTICIPANT)
-            setCommand(CbEventCommand.LANDING)
-          }),
-          maxCols = 1, isInplaceUpdate = true)
-        // -------------------------------------------------------------------------
-      }
+      CbEventCommand.LANDING -> {}
       CbEventCommand.LIST -> event?.let { showEvent(participant, it, tg) }
 
       CbEventCommand.REGISTER -> event?.let {
@@ -95,7 +102,6 @@ fun showEvent(
     isMarkdown = true,
     isInplaceUpdate = isInplaceUpdate
   )
-  tg.sendReplies()
   // -------------------------------------------------------------------------
   tg.userSession.reset()
 }

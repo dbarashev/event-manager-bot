@@ -220,10 +220,17 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
     }}
   }
   state("PARTICIPANT_EVENTS") {
+    trigger {
+      setSection(CbSection.EVENTS)
+      setCommand(CbEventCommand.LANDING)
+    }
+    action(::ParticipantEventsAction)
+  }
+  state("PARTICIPANT_SHOW_EVENT") {
     isIgnored = true
     trigger {
       setSection(CbSection.EVENTS)
-      setCommand(CbTeamCommand.LANDING)
+      setCommand(CbEventCommand.LIST)
     }
   }
   state("PARTICIPANT_REGISTER") {
@@ -239,7 +246,7 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
 fun processMessage(update: Update, sender: MessageSender) {
   LOG_INPUT.debug("Received update {}", update.message?.messageId ?: update.callbackQuery?.let {"callback ${it.data}"})
   val tg = ChainBuilder(update, sender, ::userSessionProvider)
-  val user = TgUser(tg.fromUser?.displayName() ?: "", tg.fromUser?.id?.toString() ?: "")
+  val user = TgUser(displayName = tg.fromUser?.displayName() ?: "", id = tg.fromUser?.id?.toString() ?: "", username = tg.fromUser?.userName ?: "")
   buildStateMachine().run {
     val inputData = if (update.message?.text == "/start") {
       InputData(objectNode { setSection(CbSection.LANDING) }, objectNode {  }, user)
@@ -314,6 +321,7 @@ fun ParticipantRecord.deepLinkLanding(tg: ChainBuilder) {
   tg.messageText.removePrefix("/start").trim().toIntOrNull()?.let(::getEventRecord)?.let { event ->
     println("event=$event")
     showEvent(this, event, tg, isInplaceUpdate = false)
+    tg.sendReplies()
   }
 }
 

@@ -15,7 +15,7 @@
     </root>
 
     <logger name="Bot" level="DEBUG" />
-    <logger name="Bot.Dialog" level="DEBUG" />
+    <logger name="Bot.Dialog" level="INFO" />
     <logger name="Bot.Input" level="DEBUG" />
     <logger name="org.jooq" level="INFO"/>
     <logger name="com.zaxxer.hikari" level="INFO"/>

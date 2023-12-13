@@ -6,7 +6,8 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.michaelbull.result.*
 import org.slf4j.LoggerFactory
 
-data class TgUser(val displayName: String, val id: String)
+data class TgUser(val displayName: String, val id: String, val username: String)
+
 data class InputData(val stateJson: ObjectNode, val contextJson: ObjectNode, val user: TgUser)
 data class OutputData(val contextJson: ObjectNode)
 
