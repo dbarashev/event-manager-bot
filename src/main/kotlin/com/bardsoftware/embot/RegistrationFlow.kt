@@ -74,8 +74,8 @@ class RegistrationFlow(
           setTeamMemberId(registrant.id!!)
         }),
         BtnData("Другого человека...", callbackData = json(payload) {
-          setSection(CbSection.TEAM)
-          setCommand(CbTeamCommand.ADD_DIALOG)
+          setSection(CbSection.DIALOG)
+          setDialogId(CbTeamCommand.ADD_DIALOG.id)
             //set<ObjectNode>("esc", payload)
         }),
         BtnData("✔ OK", callbackData = json(payload) {
