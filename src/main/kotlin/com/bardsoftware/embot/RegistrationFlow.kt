@@ -23,7 +23,6 @@ data class RegistrationFlowStorageApi(
 
 data class RegistrationFlowOutputApi(
   val sendWhomAdd: (candidates: List<ParticipantRecord>, btns: List<BtnData>) -> Unit,
-  val sendRegistered: (participant: ParticipantRecord) -> Unit,
   val sendRedirectToSettings: (participant: ParticipantRecord) -> Unit,
   val close: (payload: ObjectNode) -> Unit
 )
@@ -79,7 +78,7 @@ class RegistrationFlow(
         BtnData("Себя", callbackData = json(payload) {
           setTeamMemberId(registrant.id!!)
         }),
-        BtnData("Другого человека...", callbackData = json(payload) {
+        BtnData("Другого человека...", callbackData = json {
           setSection(CbSection.DIALOG)
           setDialogId(CbTeamCommand.ADD_DIALOG.id)
           set<ObjectNode>("esc", escapeFromMemberAdd)
@@ -99,9 +98,10 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
     close = {payload ->
       tg.reply("Всех зарегистрировали!", buttons = listOf(
         BtnData("<< Назад", callbackData = json {
-          setSection(CbSection.EVENTS)
-          setCommand(CbEventCommand.LIST)
-          inputPayload.getEventId()?.let(this::setEventId)
+          put("#", EMBotState.PARTICIPANT_SHOW_EVENT.id)
+          set<ObjectNode>("_", objectNode {
+            inputPayload.getEventId()?.let(this::setEventId)
+          })
         }),
       ), isInplaceUpdate = true)
       payload.getEventId()?.let {eventId ->
@@ -111,13 +111,6 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
           } else null
         }?.toList() ?: emptyList())
       }
-    },
-    sendRegistered = {participant ->
-      // -------------------------------------------------------------------------
-      tg.reply("Вы зарегистрированы!",
-        buttons = participant.getEventButtons(inputPayload),
-        maxCols = 1, isInplaceUpdate = true)
-      // -------------------------------------------------------------------------
     },
     sendWhomAdd = {candidates, buttons ->
       val names = candidates.joinToString(separator = ",") {

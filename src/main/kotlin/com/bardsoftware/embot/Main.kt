@@ -41,13 +41,15 @@ enum class CbEventCommand {
 }
 
 enum class EMBotState(val id: Int) {
-  PARTICIPANT_SHOW_EVENT(200);
+  PARTICIPANT_SHOW_EVENT(200), PARTICIPANT_UNREGISTER(202);
 
   val code: String = "$id"
   companion object {
     fun byId(id: Int) = entries.find { it.id == id }
   }
 }
+
+private fun BotStateMachine.state(state: EMBotState, code: State.()->Unit) = this.state(state.id, code)
 fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
   state("START") {
     trigger {
@@ -234,7 +236,7 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
     }
     action(::ParticipantEventsAction)
   }
-  state(EMBotState.PARTICIPANT_SHOW_EVENT.id) {
+  state(EMBotState.PARTICIPANT_SHOW_EVENT) {
     action(::ParticipantShowEventAction)
   }
 
@@ -246,13 +248,8 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       isSubset = true
     }
   }
-  state("PARTICIPANT_UNREGISTER") {
-    isIgnored = true
-    trigger {
-      setSection(CbSection.EVENTS)
-      setCommand(CbEventCommand.UNREGISTER)
-      isSubset = true
-    }
+  state(EMBotState.PARTICIPANT_UNREGISTER) {
+    action(::ParticipantUnregisterAction)
   }
 
 }

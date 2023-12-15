@@ -54,7 +54,7 @@ class ParticipantShowEventAction(
       "PARTICIPANT_REGISTER" to ButtonBuilder({"Регистрация \u23E9"}) {
         OutputData(objectNode { setEventId(event.id!!) })
       }) + if (registeredTeam.isEmpty()) emptyList() else listOf(
-      "PARTICIPANT_UNREGISTER" to ButtonBuilder({"Отменить регистрацию полностью"}) {
+      EMBotState.PARTICIPANT_UNREGISTER.code to ButtonBuilder({"Отменить регистрацию полностью"}) {
         OutputData(objectNode { setEventId(event.id!!) })
       }) + listOf(
       "PARTICIPANT_EVENTS" to ButtonBuilder({"\ud83d\udd19 Назад"})
@@ -62,6 +62,26 @@ class ParticipantShowEventAction(
   )
 }
 
+class ParticipantUnregisterAction(inputData: InputData): StateAction {
+  override val text = TextMessage("Регистрация отменена.")
+  override val buttonTransition = ButtonTransition(buttons = listOf(
+    EMBotState.PARTICIPANT_SHOW_EVENT.code to ButtonBuilder({"\ud83d\udd19 Назад к событию"})
+  ))
+
+  init {
+    val eventId = inputData.contextJson.getEventId() ?: throw IllegalArgumentException("Event ID not found in the input data")
+    db {
+      deleteFrom(EVENTREGISTRATION).where(EVENTREGISTRATION.PARTICIPANT_ID.`in`(
+        select(EVENTTEAMREGISTRATIONVIEW.PARTICIPANT_ID)
+          .from(EVENTTEAMREGISTRATIONVIEW)
+          .where(EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(inputData.user.id.toLong())
+            .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(eventId))
+          )
+      )).execute()
+    }
+  }
+
+}
 fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
   val participant = this
   tg.onCallback { node ->
@@ -79,21 +99,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       CbEventCommand.REGISTER -> event?.let {
         registerParticipant(node, it, participant, tg)
       }
-      CbEventCommand.UNREGISTER -> event?.let {
-        db {
-          deleteFrom(EVENTREGISTRATION).where(EVENTREGISTRATION.PARTICIPANT_ID.`in`(
-            select(EVENTTEAMREGISTRATIONVIEW.PARTICIPANT_ID)
-              .from(EVENTTEAMREGISTRATIONVIEW)
-              .where(EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(participant.userId)
-                .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(it.id))
-              )
-          )).execute()
-        }
-        // -------------------------------------------------------------------------
-        tg.reply("Регистрация отменена", buttons = participant.getEventButtons(node), maxCols = 1, isInplaceUpdate = true)
-        // -------------------------------------------------------------------------
-        tg.userSession.reset()
-      }
+      CbEventCommand.UNREGISTER -> {}
     }
   }
 }
@@ -124,40 +130,6 @@ fun getAvailableEvents(participant: ParticipantRecord): List<EventRecord> =
           participantLimit = it.component4())
     }.toList()
   }
-
-fun ParticipantRecord.getEventButtons(srcNode: ObjectNode) =
-  getAvailableEvents(this).map {
-    BtnData(it.formatUncheckedLabel(),
-      callbackData = srcNode.apply {
-        setEventId(it.id!!)
-        setCommand(CbEventCommand.LIST)
-      }.toString()
-    )
-  }.toList()
-
-
-fun EventviewRecord.register(registrant: ParticipantRecord, participant: ParticipantRecord) = txn {
-  val subscriptionId = selectFrom(EVENTSERIESSUBSCRIPTION)
-    .where(EVENTSERIESSUBSCRIPTION.SERIES_ID.eq(this@register.seriesId)
-      .and(EVENTSERIESSUBSCRIPTION.PARTICIPANT_ID.eq(registrant.id))
-    ).fetchOne()?.id ?: return@txn
-  insertInto(EVENTREGISTRATION)
-    .columns(EVENTREGISTRATION.PARTICIPANT_ID, EVENTREGISTRATION.EVENT_ID, EVENTREGISTRATION.SUBSCRIPTION_ID)
-    .values(participant.id, this@register.id, subscriptionId).execute()
-}
-
-fun EventviewRecord.unregister(participant: ParticipantRecord) = db {
-  deleteFrom(EVENTREGISTRATION).where(
-    EVENTREGISTRATION.EVENT_ID.eq(this@unregister.id)
-      .and(EVENTREGISTRATION.PARTICIPANT_ID.eq(participant.id))
-  ).execute()
-}
-
-fun returnToEventRegistrationLanding() =
-  BtnData("<< Назад", callbackData = OBJECT_MAPPER.createObjectNode().apply {
-    setSection(CbSection.EVENTS)
-    setCommand(CbEventCommand.LANDING)
-  }.toString())
 
 fun InputData.getOrCreateParticipant() =
   getOrCreateParticipant(this.user.id.toLong(), this.user.username, 1)
