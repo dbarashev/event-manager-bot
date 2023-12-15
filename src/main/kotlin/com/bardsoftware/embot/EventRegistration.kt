@@ -1,6 +1,7 @@
 package com.bardsoftware.embot
 
 import com.bardsoftware.embot.db.tables.records.EventRecord
+import com.bardsoftware.embot.db.tables.records.EventteamregistrationviewRecord
 import com.bardsoftware.embot.db.tables.records.EventviewRecord
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.*
@@ -11,18 +12,53 @@ import org.jooq.types.DayToSecond
 import java.time.Duration
 
 class ParticipantEventsAction(private val participant: ParticipantRecord): StateAction {
-  constructor(inputData: InputData): this(getOrCreateParticipant(inputData.user.id.toLong(), inputData.user.username, 1))
+  constructor(inputData: InputData): this(inputData.getOrCreateParticipant())
   override val text get() = TextMessage("Ваши события:")
   override val buttonTransition get() = ButtonTransition(
     buttons = getAvailableEvents(participant).map { eventRecord ->
-      "PARTICIPANT_SHOW_EVENT" to ButtonBuilder({ eventRecord.formatUncheckedLabel() }) {
+      EMBotState.PARTICIPANT_SHOW_EVENT.code to ButtonBuilder({ eventRecord.formatUncheckedLabel() }) {
         OutputData(objectNode {
           setEventId(eventRecord.id!!)
         }
       )}
     }.toList() + listOf(
-      "PARTICIPANT_LANDING" to ButtonBuilder({"<< Назад"})
+      "PARTICIPANT_LANDING" to ButtonBuilder({"\ud83d\udd19 Назад"})
     )
+  )
+}
+
+class ParticipantShowEventAction(
+  private val event: EventviewRecord,
+  private val registeredTeam: List<EventteamregistrationviewRecord>): StateAction {
+
+  constructor(inputData: InputData): this(
+    event = inputData.contextJson.getEventId()?.let(::getEventRecord) ?: throw IllegalArgumentException("Event ID not found in the input"),
+    registeredTeam = db {
+      selectFrom(EVENTTEAMREGISTRATIONVIEW).where(
+        EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(inputData.user.id.toLong())
+          .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(inputData.contextJson.getEventId() ?: throw IllegalArgumentException("Event ID not found in the input")))
+      ).toList()
+    }
+  )
+
+  override val text: TextMessage
+    get() {
+      val registeredLabel =
+        if (registeredTeam.isEmpty()) "из вашей команды пока никто"
+        else registeredTeam.map { it.participantName!!.escapeMarkdown() }.joinToString(separator = ", ")
+      return TextMessage(event.formatDescription(registeredLabel, isOrg = false), TextMarkup.MARKDOWN)
+    }
+
+  override val buttonTransition = ButtonTransition(
+    buttons = listOf(
+      "PARTICIPANT_REGISTER" to ButtonBuilder({"Регистрация \u23E9"}) {
+        OutputData(objectNode { setEventId(event.id!!) })
+      }) + if (registeredTeam.isEmpty()) emptyList() else listOf(
+      "PARTICIPANT_UNREGISTER" to ButtonBuilder({"Отменить регистрацию полностью"}) {
+        OutputData(objectNode { setEventId(event.id!!) })
+      }) + listOf(
+      "PARTICIPANT_EVENTS" to ButtonBuilder({"\ud83d\udd19 Назад"})
+      )
   )
 }
 
@@ -38,7 +74,7 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
 
     when(node.getCommand()) {
       CbEventCommand.LANDING -> {}
-      CbEventCommand.LIST -> event?.let { showEvent(participant, it, tg) }
+      CbEventCommand.LIST -> {}
 
       CbEventCommand.REGISTER -> event?.let {
         registerParticipant(node, it, participant, tg)
@@ -60,50 +96,6 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       }
     }
   }
-}
-
-fun showEvent(
-  participant: ParticipantRecord,
-  event: EventviewRecord,
-  tg: ChainBuilder,
-  isInplaceUpdate: Boolean = true
-) {
-  val registeredTeam = db {
-    selectFrom(EVENTTEAMREGISTRATIONVIEW).where(
-      EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(participant.userId)
-        .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(event.id))
-    ).toList()
-  }
-  val registeredLabel =
-    if (registeredTeam.isEmpty()) "из вашей команды пока никто"
-    else registeredTeam.map { it.participantName!!.escapeMarkdown() }.joinToString(separator = ", ")
-  val btns =
-    listOf(
-      BtnData("Регистрация", json {
-        setSection(CbSection.EVENTS)
-        setCommand(CbEventCommand.REGISTER)
-        setEventId(event.id!!)
-      })
-    ) + if (registeredTeam.isNotEmpty()) {
-      listOf(
-        BtnData("Отменить регистрацию полностью", json {
-          setSection(CbSection.EVENTS)
-          setCommand(CbEventCommand.UNREGISTER)
-          setEventId(event.id!!)
-        })
-      )
-    } else {
-      emptyList()
-    }
-  // -------------------------------------------------------------------------
-  tg.reply(
-    event.formatDescription(registeredLabel, isOrg = false),
-    buttons = btns + returnToEventRegistrationLanding(),
-    isMarkdown = true,
-    isInplaceUpdate = isInplaceUpdate
-  )
-  // -------------------------------------------------------------------------
-  tg.userSession.reset()
 }
 
 private fun registerParticipant(
@@ -166,6 +158,9 @@ fun returnToEventRegistrationLanding() =
     setSection(CbSection.EVENTS)
     setCommand(CbEventCommand.LANDING)
   }.toString())
+
+fun InputData.getOrCreateParticipant() =
+  getOrCreateParticipant(this.user.id.toLong(), this.user.username, 1)
 
 fun ObjectNode.getEventId() = this["e"]?.asInt()
 fun ObjectNode.setEventId(eventId: Int) = this.put("e", eventId)

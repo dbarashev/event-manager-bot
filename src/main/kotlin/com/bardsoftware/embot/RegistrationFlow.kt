@@ -64,6 +64,12 @@ class RegistrationFlow(
     val candidates = storageApi.getAllParticipants(candidateIds)
     // -------------------------------------------------------------------------
     val remainingMembers = allMembers.filter { member  -> candidates.find { it.id == member.id } == null }
+    val escapeFromMemberAdd = objectNode {
+      put("#", EMBotState.PARTICIPANT_SHOW_EVENT.id)
+      set<ObjectNode>("_", objectNode {
+        setEventId(event.id!!)
+      })
+    }
     val buttons =
       remainingMembers.map { member ->
         BtnData("${member.displayName}, ${member.age}", callbackData = json(payload) {
@@ -76,16 +82,12 @@ class RegistrationFlow(
         BtnData("Другого человека...", callbackData = json(payload) {
           setSection(CbSection.DIALOG)
           setDialogId(CbTeamCommand.ADD_DIALOG.id)
-            //set<ObjectNode>("esc", payload)
+          set<ObjectNode>("esc", escapeFromMemberAdd)
         }),
-        BtnData("✔ OK", callbackData = json(payload) {
+        BtnData("OK \u2611", callbackData = json(payload) {
           setConfirmation()
         }),
-        BtnData("<< Назад", callbackData = json {
-          setSection(CbSection.EVENTS)
-          setCommand(CbEventCommand.LIST)
-          setEventId(event.id!!)
-        })
+        BtnData("\uD83D\uDD19 Назад", callbackData = json(escapeFromMemberAdd){})
       )
     outputApi.sendWhomAdd(candidates, buttons)
       // -------------------------------------------------------------------------

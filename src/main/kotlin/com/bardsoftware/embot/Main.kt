@@ -40,6 +40,14 @@ enum class CbEventCommand {
   val id get() = this.ordinal
 }
 
+enum class EMBotState(val id: Int) {
+  PARTICIPANT_SHOW_EVENT(200);
+
+  val code: String = "$id"
+  companion object {
+    fun byId(id: Int) = entries.find { it.id == id }
+  }
+}
 fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
   state("START") {
     trigger {
@@ -226,20 +234,27 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
     }
     action(::ParticipantEventsAction)
   }
-  state("PARTICIPANT_SHOW_EVENT") {
-    isIgnored = true
-    trigger {
-      setSection(CbSection.EVENTS)
-      setCommand(CbEventCommand.LIST)
-    }
+  state(EMBotState.PARTICIPANT_SHOW_EVENT.id) {
+    action(::ParticipantShowEventAction)
   }
+
   state("PARTICIPANT_REGISTER") {
+    isIgnored = true
     trigger {
       setSection(CbSection.EVENTS)
       setCommand(CbEventCommand.REGISTER)
       isSubset = true
     }
   }
+  state("PARTICIPANT_UNREGISTER") {
+    isIgnored = true
+    trigger {
+      setSection(CbSection.EVENTS)
+      setCommand(CbEventCommand.UNREGISTER)
+      isSubset = true
+    }
+  }
+
 }
 
 
@@ -247,15 +262,25 @@ fun processMessage(update: Update, sender: MessageSender) {
   LOG_INPUT.debug("Received update {}", update.message?.messageId ?: update.callbackQuery?.let {"callback ${it.data}"})
   val tg = ChainBuilder(update, sender, ::userSessionProvider)
   val user = TgUser(displayName = tg.fromUser?.displayName() ?: "", id = tg.fromUser?.id?.toString() ?: "", username = tg.fromUser?.userName ?: "")
+
   buildStateMachine().run {
-    val inputData = if (update.message?.text == "/start") {
-      InputData(objectNode { setSection(CbSection.LANDING) }, objectNode {  }, user)
-    } else {
+    val inputData = update.message?.text?.let {
+      if (it == "/start") {
+        InputData(objectNode { setSection(CbSection.LANDING) }, objectNode {  }, user)
+      } else if (it.startsWith("/start")) {
+        it.removePrefix("/start").trim().toIntOrNull()?.let {eventId ->
+          InputData(this.getState(EMBotState.PARTICIPANT_SHOW_EVENT.code)?.stateJson ?: objectNode {},
+            objectNode { setEventId(eventId) },
+            user
+          )
+        }
+      } else null
+    } ?:
       tg.callbackJson?.let {
         val contextJson = it.remove("_") as? ObjectNode ?: objectNode {}
         InputData(it, contextJson = contextJson, user)
       } ?: InputData(objectNode {}, objectNode {}, user)
-    }
+
     val outputUi = createOutputUi(tg, inputData, this::getState)
 
     handle(inputData, outputUi)
@@ -281,8 +306,6 @@ fun processMessage(update: Update, sender: MessageSender) {
       participant.eventRegistrationCallbacks(this)
       participant.teamManagementCallbacks(this)
       participant.settingsModule(this)
-      participant.deepLinkLanding(tg)
-
     }
   }
 }
@@ -315,16 +338,6 @@ fun getOrCreateParticipant(tgUserId: Long, tgUsername: String, orgId: Int): Part
 fun findParticipant(id: Int): ParticipantRecord? = db {
   selectFrom(PARTICIPANT).where(PARTICIPANT.ID.eq(id)).fetchOne()
 }
-
-fun ParticipantRecord.deepLinkLanding(tg: ChainBuilder) {
-  println("deepLinkHandling: message=${tg.messageText}")
-  tg.messageText.removePrefix("/start").trim().toIntOrNull()?.let(::getEventRecord)?.let { event ->
-    println("event=$event")
-    showEvent(this, event, tg, isInplaceUpdate = false)
-    tg.sendReplies()
-  }
-}
-
 
 fun ObjectNode.getSection() = this[CB_SECTION]?.asInt()?.let(CbSection.values()::get) ?: CbSection.LANDING
 fun ObjectNode.setSection(section: CbSection) = this.apply {

@@ -141,6 +141,13 @@ class BotStateMachine {
     registerState(State(id, this).apply(code))
   }
 
+  fun state(id: Int, code: State.()->Unit) {
+    State(id.toString(), this).apply {
+      registerState(this.apply(code))
+      required("#", id)
+    }
+  }
+
   fun registerState(state: State) {
     states[state.id] = state
   }
