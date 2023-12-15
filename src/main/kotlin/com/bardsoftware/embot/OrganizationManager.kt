@@ -94,8 +94,9 @@ fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand,
     step("primary_latlon", DialogDataType.LOCATION, "primary_latlon", "Геолокация:",
       "Введите геолокацию в виде двух десятичных чисел, разделённых запятой. Первое число -- это широта в интервале от -90 до 90. Второе число -- долгота в интервале от -180 до 180.")
     step("limit", DialogDataType.INT, "Участников (max)", "Максимальное количество участников:")
+    step("send_notifications", DialogDataType.BOOLEAN, "Нотификации", "Хотите получать уведомления о регистрациях?")
     confirm("Создаём/обновляем?") {json ->
-      if (createEvent(json)) {
+      if (createEvent(tg.fromUser?.id, json)) {
         tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
         tg.userSession.reset()
         Ok(json)
@@ -245,7 +246,7 @@ fun getDefaultSeries(organizerId: Int) = db {
   selectFrom(EVENTSERIES).where(EVENTSERIES.ORGANIZER_ID.eq(organizerId).and(EVENTSERIES.IS_DEFAULT)).fetchOne()
 }
 
-fun createEvent(eventData: ObjectNode): Boolean =
+fun createEvent(userChatId: Long?, eventData: ObjectNode): Boolean =
   db {
     val title = eventData["title"]?.asText() ?: return@db false
     val start = eventData["start"]?.asText()?.toDate()?.getOrElse { null } ?: return@db false
@@ -253,6 +254,8 @@ fun createEvent(eventData: ObjectNode): Boolean =
     val limit = eventData["limit"]?.asInt()
     val primaryAddress = eventData["primary_address"]?.asText()
     val primaryLatLon = eventData["primary_latlon"]?.asText()?.toLatLon()?.getOrElse { null }
+    val sendNotifications = eventData["send_notifications"]?.asText()?.toBool()?.getOrElse { false }
+    val notificationChatId = if (sendNotifications == true && userChatId != null) "$userChatId" else null
     eventData["event_id"]?.asInt()?.let {eventId ->
      update(EVENT)
        .set(EVENT.TITLE, title)
@@ -262,11 +265,12 @@ fun createEvent(eventData: ObjectNode): Boolean =
        .set(EVENT.PRIMARY_ADDRESS, primaryAddress)
        .set(EVENT.PRIMARY_LAT, primaryLatLon?.lat)
        .set(EVENT.PRIMARY_LON, primaryLatLon?.lon)
+       .set(EVENT.NOTIFICATION_CHAT_ID, notificationChatId)
        .where(EVENT.ID.eq(eventId))
        .execute()
     } ?: run {
-      insertInto(EVENT, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID, EVENT.PARTICIPANT_LIMIT, EVENT.PRIMARY_ADDRESS, EVENT.PRIMARY_LAT, EVENT.PRIMARY_LON)
-        .values(title, start, seriesId, limit, primaryAddress, primaryLatLon?.lat, primaryLatLon?.lon)
+      insertInto(EVENT, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID, EVENT.PARTICIPANT_LIMIT, EVENT.PRIMARY_ADDRESS, EVENT.PRIMARY_LAT, EVENT.PRIMARY_LON, EVENT.NOTIFICATION_CHAT_ID)
+        .values(title, start, seriesId, limit, primaryAddress, primaryLatLon?.lat, primaryLatLon?.lon, notificationChatId)
         .execute()
     }
     true
