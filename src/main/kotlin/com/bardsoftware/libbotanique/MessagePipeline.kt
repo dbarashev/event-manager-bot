@@ -101,7 +101,7 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
     if (it.isNotBlank()) {
       val jsonNode = OBJECT_MAPPER.readTree(it)
       if (jsonNode.isObject) {
-        jsonNode as ObjectNode
+        (jsonNode as ObjectNode).deepCopy()
       } else {
         println("Malformed callback json: $jsonNode")
         null
@@ -291,7 +291,7 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
 
             parseJson {json ->
               for (h in callbackHandlers) {
-                h(json)
+                h(json.deepCopy())
                 if (this.stopped) {
                   break
                 }

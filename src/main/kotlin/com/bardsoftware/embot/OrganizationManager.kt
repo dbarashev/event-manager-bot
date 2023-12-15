@@ -17,7 +17,7 @@ enum class OrgManagerCommand {
 fun organizationManagementModule(tg: ChainBuilder) {
   eventDialog(tg, titleMdwn = "Создаём новое событие\\.", OrgManagerCommand.EVENT_ADD) { input ->
     input.apply {
-      setDialogId(OrgManagerCommand.EVENT_EDIT.id)
+      setDialogId(OrgManagerCommand.EVENT_ADD.id)
       put("org_id", input.getOrganizationId())
       put("series_id", getDefaultSeries(input.getOrganizationId()!!)!!.id)
     }
@@ -122,7 +122,7 @@ class OrgLandingAction(input: InputData): StateAction {
         title = orgs[0].get(ORGANIZER.TITLE)
         googleSheetId = orgs[0].get(ORGANIZER.GOOGLE_SHEET_ID)
       }
-    } else throw RuntimeException("Найдено ${orgs.size} управляемых организаций")
+    } else throw RuntimeException("Найдено ${orgs.size} управляемых вами организаций")
   }
 
   override val text get() = TextMessage(
@@ -265,8 +265,8 @@ fun createEvent(eventData: ObjectNode): Boolean =
        .where(EVENT.ID.eq(eventId))
        .execute()
     } ?: run {
-      insertInto(EVENT, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID, EVENT.PARTICIPANT_LIMIT)
-        .values(title, start, seriesId, limit)
+      insertInto(EVENT, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID, EVENT.PARTICIPANT_LIMIT, EVENT.PRIMARY_ADDRESS, EVENT.PRIMARY_LAT, EVENT.PRIMARY_LON)
+        .values(title, start, seriesId, limit, primaryAddress, primaryLatLon?.lat, primaryLatLon?.lon)
         .execute()
     }
     true

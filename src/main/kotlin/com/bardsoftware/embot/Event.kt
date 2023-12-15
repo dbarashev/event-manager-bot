@@ -15,7 +15,7 @@ fun EventviewRecord.formatDescription(registeredParticipantsMdwn: String, isOrg:
     | *Дата*\: ${start!!.toLocalDate().toString().escapeMarkdown()}
     | *Время*\: ${start!!.toLocalTime().toString().escapeMarkdown()}
     | *Адрес*\: ${primaryAddress ?: "\\-"}
-    | ${getGeoLocation()?.let {"*Геолокация*\\: ${it.toString().escapeMarkdown()} [Google](https\\://google.com/maps/place/${it.toString().escapeMarkdown()})"}}
+    | ${getGeoLocation()?.let {"*Геолокация*\\: ${it.toString().escapeMarkdown()} [Google](${it.asGoogleLink().escapeMarkdown()})"}}
     | *Max\. участников*\: ${participantLimit?.toString() ?: "\\-"}
     | ${"—".repeat(20)}
     | 

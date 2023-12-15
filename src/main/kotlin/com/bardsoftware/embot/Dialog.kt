@@ -19,6 +19,7 @@ enum class DialogDataType {
 data class LatLon(val lat: BigDecimal, val lon: BigDecimal) {
   override fun toString() = "$lat,$lon"
 
+  fun asGoogleLink() = "https://www.google.com/maps/search/?api=1&query=$lat%2C$lon"
 }
 data class DialogStep(
   val fieldName: String,
