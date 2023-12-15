@@ -13,7 +13,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 enum class DialogDataType {
-  TEXT, INT, NUMBER, DATE, LOCATION
+  TEXT, INT, NUMBER, DATE, LOCATION, BOOLEAN
 }
 
 data class LatLon(val lat: BigDecimal, val lon: BigDecimal) {
@@ -62,25 +62,46 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
   private fun replyStep(dialogData: ObjectNode, stepIdx: Int) {
     dialogData.apply {
       put("next_field", steps[stepIdx].fieldName)
-      set<ObjectNode>("esc", exitPayload?.asJson())
+      set<ObjectNode>("esc", exitPayload.asJson())
     }
     saveDialogData()
-    val prefixButtons = dialogData[steps[stepIdx].fieldName]?.let {
-      listOf(BtnData("Пропустить", callbackData = json {
-        setSection(CbSection.DIALOG)
-        setDialogId(this@Dialog.id)
-        setDialogOk()
-        put("next_field", stepIdx)
-      }))
-    } ?: emptyList()
-    val defaultValue = dialogData[steps[stepIdx].fieldName]?.asText()?.let {
-      "[${it}]"
-    } ?: ""
 
-    tg.reply("${steps[stepIdx].question} $defaultValue",
-      buttons = prefixButtons + listOf(BtnData("<< Выйти", callbackData = exitPayload ?: "{}"))
-    )
+    val exitButton = listOf(BtnData("<< Выйти", callbackData = exitPayload))
+    val step = steps[stepIdx]
+    if (step.dataType == DialogDataType.BOOLEAN) {
+      val prefixButtons = listOf(
+        BtnData("Да", callbackData = json {
+          setSection(CbSection.DIALOG)
+          setDialogId(this@Dialog.id)
+          put("idx", stepIdx)
+          put("y", 1)
+        }),
+        BtnData("Нет", callbackData = json {
+          setSection(CbSection.DIALOG)
+          setDialogId(this@Dialog.id)
+          put("idx", stepIdx)
+          put("y", 0)
+        }),
+      )
+      tg.reply(step.question, buttons = prefixButtons + exitButton)
+    } else {
+      val prefixButtons = dialogData[step.fieldName]?.let {
+        listOf(BtnData("Пропустить", callbackData = json {
+          setSection(CbSection.DIALOG)
+          setDialogId(this@Dialog.id)
+          setDialogOk()
+          put("next_field", stepIdx)
+        }))
+      } ?: emptyList()
+      val defaultValue = dialogData[step.fieldName]?.asText()?.let {
+        "[${it}]"
+      } ?: ""
 
+      tg.reply(
+        "${step.question} $defaultValue",
+        buttons = prefixButtons + exitButton
+      )
+    }
   }
 
 
@@ -100,7 +121,10 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
           LOG_DIALOG.debug("..user clicked Ok in the confirmation dialog. Dialog data={}", dialogData)
           onSuccess(dialogData)
           return@onCallback
-        } else {
+        } else if (node["y"]?.asInt() != null) {
+          LOG_DIALOG.debug("... user clicked boolean answer button={}", node["y"]?.asInt())
+          processInput(confirmQuestion, "${node["y"].asInt()}")
+        }  else {
           LOG_DIALOG.debug("..dialog just've started.")
           replyStep(setup(node).also {saveDialogData(it)}, 0)
         }
@@ -108,31 +132,34 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
         LOG_DIALOG.debug("... input is not applicable")
       }
     }
-    tg.onInput(this.id) { msg ->
-      LOG_DIALOG.debug("Received text input from user: {}", msg)
-      val expectedField = dialogData["next_field"]?.asText() ?: steps[0].fieldName
-      val expectedStepIdx = steps.indexOfFirst { it.fieldName == expectedField }
-      if (expectedStepIdx == -1) {
-        return@onInput
-      }
-      LOG_DIALOG.debug("..this applies to field {}", expectedField)
-      LOG_DIALOG.debug("..dialog data={}", dialogData)
-      val expectedStep = steps[expectedStepIdx]
-      val isValueValid = when(expectedStep.dataType) {
-        DialogDataType.TEXT -> true
-        DialogDataType.INT -> msg.toIntOrNull()?.takeIf { it >= 0 } != null
-        DialogDataType.NUMBER -> msg.toBigDecimalOrNull() != null
-        DialogDataType.DATE -> msg.toDate() is Ok
-        DialogDataType.LOCATION -> msg.toLatLon() is Ok
-      }
-      if (!isValueValid) {
-        println("value $msg is not valid, reply: ${expectedStep.invalidValueReply}")
-        tg.reply(expectedStep.invalidValueReply.ifBlank { "Значение не валидно" })
-        return@onInput
-      }
-      dialogData.put(expectedStep.fieldName, msg)
-      nextStep(confirmQuestion, expectedStepIdx, dialogData)
+    tg.onInput(this.id) { msg -> processInput(confirmQuestion, msg) }
+  }
+
+  private fun processInput(confirmQuestion: String, msg: String) {
+    LOG_DIALOG.debug("Received text input from user: {}", msg)
+    val expectedField = dialogData["next_field"]?.asText() ?: steps[0].fieldName
+    val expectedStepIdx = steps.indexOfFirst { it.fieldName == expectedField }
+    if (expectedStepIdx == -1) {
+      return
     }
+    LOG_DIALOG.debug("..this applies to field {}", expectedField)
+    LOG_DIALOG.debug("..dialog data={}", dialogData)
+    val expectedStep = steps[expectedStepIdx]
+    val isValueValid = when(expectedStep.dataType) {
+      DialogDataType.TEXT -> true
+      DialogDataType.INT -> msg.toIntOrNull()?.takeIf { it >= 0 } != null
+      DialogDataType.NUMBER -> msg.toBigDecimalOrNull() != null
+      DialogDataType.DATE -> msg.toDate() is Ok
+      DialogDataType.LOCATION -> msg.toLatLon() is Ok
+      DialogDataType.BOOLEAN -> msg.toBool() is Ok
+    }
+    if (!isValueValid) {
+      println("value $msg is not valid, reply: ${expectedStep.invalidValueReply}")
+      tg.reply(expectedStep.invalidValueReply.ifBlank { "Значение не валидно" })
+      return
+    }
+    dialogData.put(expectedStep.fieldName, msg)
+    nextStep(confirmQuestion, expectedStepIdx, dialogData)
   }
 
   private fun nextStep(confirmQuestion: String, expectedStepIdx: Int, dialogData: ObjectNode) {
@@ -177,6 +204,17 @@ fun String.toLatLon() = Result.runCatching {
   LatLon(strLat.toBigDecimal(), strLon.toBigDecimal())
 }.onFailure { it.printStackTrace() }
 
+fun String.toBool() = Result.runCatching {
+  this@toBool.trim().lowercase().let {
+    if (setOf("1", "true", "y", "yes").contains(it)) {
+      true
+    } else if (setOf("0", "false", "no", "n").contains(it)) {
+      false
+    } else {
+      throw IllegalArgumentException("Can't parse $it as boolean")
+    }
+  }
+}
 fun json(prototype: ObjectNode = jacksonObjectMapper().createObjectNode(),
          builder: ObjectNode.() -> Unit) = prototype.deepCopy().apply(builder).toString()
 
