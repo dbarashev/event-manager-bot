@@ -14,6 +14,7 @@ import com.google.auth.oauth2.GoogleCredentials
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
 import java.util.concurrent.Executors
 
@@ -67,6 +68,7 @@ fun notifyRegistration(eventId: Int, participantIds: List<Int>) {
       }
 
       orgRecord.component2()?.let { notificationChatId ->
+        LOG_NOTIFICATION.debug("Sending notification to {}", notificationChatId)
         allParticipants.filter { participantIds.contains(it.participantId) }.forEach {
           getMessageSender().send(SendMessage().apply {
             chatId = notificationChatId
@@ -78,5 +80,6 @@ fun notifyRegistration(eventId: Int, participantIds: List<Int>) {
   }
 }
 
-
+private val LOG_SYNC = LoggerFactory.getLogger("Bot.Sync")
+private val LOG_NOTIFICATION = LoggerFactory.getLogger("Bot.Notification")
 private val googleSheetScope = CoroutineScope(Executors.newSingleThreadExecutor().asCoroutineDispatcher())
