@@ -3,9 +3,7 @@ package com.bardsoftware.embot
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.*
 import com.bardsoftware.libbotanique.*
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
-import com.github.michaelbull.result.Ok
 import com.github.michaelbull.result.onFailure
 import com.github.michaelbull.result.onSuccess
 import org.slf4j.LoggerFactory
@@ -41,6 +39,7 @@ enum class CbEventCommand {
 }
 
 enum class EMBotState(val id: Int) {
+  ORG_EVENT_UNARCHIVE(185),
   PARTICIPANT_SHOW_EVENT(200), PARTICIPANT_UNREGISTER(202);
 
   val code: String = "$id"
@@ -99,6 +98,11 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
     }
     action { SimpleAction("Событие перемещено в архив", "ORG_LANDING", it) {
       it.contextJson.getEventId()!!.let(::archiveEvent)
+    }}
+  }
+  state(EMBotState.ORG_EVENT_UNARCHIVE) {
+    action { SimpleAction("Событие опубликовано", "ORG_LANDING", it) {
+      it.contextJson.getEventId()!!.let(::unarchiveEvent)
     }}
   }
   state("ORG_EVENT_ADD") {

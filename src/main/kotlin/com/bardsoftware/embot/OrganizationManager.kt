@@ -7,6 +7,7 @@ import com.bardsoftware.embot.db.tables.references.*
 import com.bardsoftware.libbotanique.*
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.github.michaelbull.result.*
+import java.time.LocalDateTime
 
 enum class OrgManagerCommand {
   LANDING, EVENT_INFO, EVENT_ADD, EVENT_DELETE, EVENT_EDIT, EVENT_ARCHIVE, EVENT_PARTICIPANT_LIST, EVENT_PARTICIPANT_ADD, EVENT_PARTICIPANT_INFO, ORG_SETTINGS,
@@ -113,6 +114,10 @@ fun archiveEvent(eventId: Int) = txn {
   update(EVENT).set(EVENT.IS_ARCHIVED, true).where(EVENT.ID.eq(eventId)).execute()
 }
 
+fun unarchiveEvent(eventId: Int) = txn {
+  update(EVENT).set(EVENT.IS_ARCHIVED, false).where(EVENT.ID.eq(eventId)).execute()
+}
+
 class OrgLandingAction(input: InputData): StateAction {
   private val orgRecord: OrganizerRecord
   init {
@@ -141,7 +146,7 @@ class OrgLandingAction(input: InputData): StateAction {
       OutputData(objectNode { setOrganizationId(orgRecord.id!!) })
     }
   ) + getAllEvents(orgRecord.id!!).map {eventRecord ->
-    "ORG_EVENT_INFO" to ButtonBuilder({eventRecord.title!!}) {
+    "ORG_EVENT_INFO" to ButtonBuilder({eventRecord.buttonLabel()}) {
       OutputData(objectNode {
         setOrganizationId(orgRecord.id!!)
         setEventId(eventRecord.id!!)
@@ -198,7 +203,11 @@ class OrgEventInfoAction(private val input: InputData): StateAction {
           setDialogId(OrgManagerCommand.EVENT_EDIT.id)
         }) }),
       "ORG_EVENT_PARTICIPANT_LIST" to ButtonBuilder({"Участники >>"}, output = { OutputData(baseOutputJson) }),
-      "ORG_EVENT_ARCHIVE"          to ButtonBuilder({"Архивировать"}, output = { OutputData(baseOutputJson) }),
+      if (event.isArchived == true) {
+        EMBotState.ORG_EVENT_UNARCHIVE.code to ButtonBuilder({ "Опубликовать" }, output = { OutputData(baseOutputJson) })
+      } else {
+        "ORG_EVENT_ARCHIVE" to ButtonBuilder({ "Архивировать" }, output = { OutputData(baseOutputJson) })
+      },
       "ORG_EVENT_DELETE"           to ButtonBuilder({"Удалить"},      output = { OutputData(baseOutputJson)}),
       "ORG_LANDING"                to ButtonBuilder({"<< Назад"}, output = {OutputData(objectNode {
         setOrganizationId(event.organizerId!!)
@@ -237,7 +246,8 @@ fun getManagedOrganizations(tgUserId: Long) = db {
 
 fun getAllEvents(organizerId: Int) = db {
   selectFrom(EVENTVIEW)
-    .where(EVENTVIEW.ORGANIZER_ID.eq(organizerId)).andNot(EVENTVIEW.IS_ARCHIVED).andNot(EVENTVIEW.IS_DELETED)
+    .where(EVENTVIEW.ORGANIZER_ID.eq(organizerId)).andNot(EVENTVIEW.IS_DELETED)
+    .and(EVENTVIEW.IS_ARCHIVED.isFalse.or(EVENTVIEW.START.ge(LocalDateTime.now())))
     .orderBy(EVENTVIEW.START.desc())
     .toList()
 }
@@ -269,8 +279,8 @@ fun createEvent(userChatId: Long?, eventData: ObjectNode): Boolean =
        .where(EVENT.ID.eq(eventId))
        .execute()
     } ?: run {
-      insertInto(EVENT, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID, EVENT.PARTICIPANT_LIMIT, EVENT.PRIMARY_ADDRESS, EVENT.PRIMARY_LAT, EVENT.PRIMARY_LON, EVENT.NOTIFICATION_CHAT_ID)
-        .values(title, start, seriesId, limit, primaryAddress, primaryLatLon?.lat, primaryLatLon?.lon, notificationChatId)
+      insertInto(EVENT, EVENT.IS_ARCHIVED, EVENT.TITLE, EVENT.START, EVENT.SERIES_ID, EVENT.PARTICIPANT_LIMIT, EVENT.PRIMARY_ADDRESS, EVENT.PRIMARY_LAT, EVENT.PRIMARY_LON, EVENT.NOTIFICATION_CHAT_ID)
+        .values(true, title, start, seriesId, limit, primaryAddress, primaryLatLon?.lat, primaryLatLon?.lon, notificationChatId)
         .execute()
     }
     true
@@ -300,17 +310,10 @@ fun updateOrg(json: ObjectNode) = runCatching {
 
 fun unregisterParticipant(eventId: Int, participantId: Int) = runCatching {
   txn {
-    println("!!!!!!!! delete eventId=$eventId partici[antId=$participantId")
     deleteFrom(EVENTREGISTRATION).where(EVENTREGISTRATION.PARTICIPANT_ID.eq(participantId).and(EVENTREGISTRATION.EVENT_ID.eq(eventId))).execute()
   }
 }
-private fun createEscButton() =
-  BtnData("<< Назад", callbackData = OBJECT_MAPPER.createObjectNode().apply {
-    setSection(CbSection.MANAGER)
-    setCommand(OrgManagerCommand.LANDING)
-  }.toString())
 
-private fun ObjectNode.getCommand() = this["c"]?.asInt()?.let(OrgManagerCommand.entries::get) ?: OrgManagerCommand.LANDING
 fun ObjectNode.setCommand(cmd: OrgManagerCommand) = this.put("c", cmd.ordinal)
 private fun ObjectNode.setOrganizationId(organizationId: Int) = this.put("o", organizationId)
 private fun ObjectNode.getOrganizationId() = this["o"]?.asInt()
