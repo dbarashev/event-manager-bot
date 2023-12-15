@@ -97,6 +97,9 @@ fun ParticipantRecord.eventRegistrationCallbacks(tg: ChainBuilder) {
       CbEventCommand.LIST -> {}
 
       CbEventCommand.REGISTER -> event?.let {
+        if (node.getTeamMemberId() == null) {
+          tg.userSession.reset()
+        }
         registerParticipant(node, it, participant, tg)
       }
       CbEventCommand.UNREGISTER -> {}

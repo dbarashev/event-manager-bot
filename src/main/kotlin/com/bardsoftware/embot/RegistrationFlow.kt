@@ -6,6 +6,7 @@ import com.bardsoftware.embot.db.tables.references.EVENTREGISTRATION
 import com.bardsoftware.embot.db.tables.references.EVENTSERIESSUBSCRIPTION
 import com.bardsoftware.libbotanique.BtnData
 import com.bardsoftware.libbotanique.ChainBuilder
+import com.bardsoftware.libbotanique.escapeMarkdown
 import com.bardsoftware.libbotanique.objectNode
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
@@ -113,18 +114,23 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
       }
     },
     sendWhomAdd = {candidates, buttons ->
-      val names = candidates.joinToString(separator = ",") {
+      val names = candidates.joinToString(separator = ", ") {
         it.displayName!!
       }
       val msg = if (names.isNotBlank()) {
         """
-          |*Нажмите кнопку ОК* чтобы зарегистрировать этот список: 
-          |$names
+          |*Нажмите кнопку ОК* чтобы зарегистрировать этот список\: 
+          |_${names.escapeMarkdown()}_
+          |
+          |Добавляйте участников в список, используя кнопки с их именами\.
         """.trimMargin()
       } else {
         """
-          \- Составьте список людей для регистрации, используя кнопки. Вносите в него только тех, кто действительно будет участвовать. 
-          \- Если нужно, создайте нового участника, например ребенка, кнопкой "Другого человека..."
+          *Список для регистрации*
+          ${"\\-".repeat(20)}
+          
+          \- Составьте список людей для регистрации, используя кнопки с именами\. Вносите в список только тех, кто действительно будет участвовать\. 
+          \- Если нужно, создайте нового участника, например ребенка, кнопкой "Другого человека\.\.\."
         """.trimIndent()
       }
       tg.reply(
@@ -133,6 +139,7 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
         |Кого добавить в список?""".trimMargin(),
         buttons = buttons,
         maxCols = 1,
+        isMarkdown = true,
         isInplaceUpdate = true
       )
     },
