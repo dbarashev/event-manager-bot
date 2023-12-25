@@ -21,12 +21,11 @@ package com.bardsoftware.embot
 /**
  * @author dbarashev@bardsoftware.com
  */
-import com.bardsoftware.libbotanique.DialogState
+import com.bardsoftware.embot.db.tables.references.DIALOGSTATE
 import com.bardsoftware.libbotanique.UserSessionStorage
 import com.zaxxer.hikari.HikariDataSource
 import org.jooq.DSLContext
 import org.jooq.SQLDialect
-import org.jooq.impl.DSL
 import org.jooq.impl.DSL.using
 import org.jooq.impl.DataSourceConnectionProvider
 import org.jooq.impl.DefaultConfiguration
@@ -74,33 +73,30 @@ fun <T> txn(code: DSLContext.() -> T): T =
     }
 
 class UserSessionImpl(private val tgUserId: Long): UserSessionStorage {
-  override val state: DialogState? = db {
-    select(DSL.field("state_id", Int::class.java), DSL.field("data", String::class.java))
-      .from("DialogState")
-      .where(DSL.field("tg_id").eq(tgUserId))
-      .firstOrNull()?.let {
-        if (it.component1() == null) null else DialogState(it.component1(), it.component2())
-      }
+
+  override fun load(stateId: Int) = db {
+    selectFrom(DIALOGSTATE)
+        .where(DIALOGSTATE.TG_ID.eq(tgUserId).and(DIALOGSTATE.STATE_ID.eq(stateId)))
+        .firstOrNull()?.data
   }
 
-  override fun reset() =
-    db {
-      deleteFrom(DSL.table("DialogState")).where(DSL.field("tg_id").eq(tgUserId)).execute()
+  override fun reset(stateId: Int?) =
+    txn {
+      deleteFrom(DIALOGSTATE).where(DIALOGSTATE.TG_ID.eq(tgUserId).and(DIALOGSTATE.STATE_ID.eq(stateId))).execute()
       Unit
     }
 
   override fun save(stateId: Int, data: String) =
     txn {
-      insertInto(DSL.table("DialogState"))
+      insertInto(DIALOGSTATE)
         .columns(
-          DSL.field("tg_id", Long::class.java),
-          DSL.field("state_id", Int::class.java),
-          DSL.field("data", String::class.java)
+          DIALOGSTATE.TG_ID,
+          DIALOGSTATE.STATE_ID,
+          DIALOGSTATE.DATA
         )
         .values(tgUserId, stateId, data)
-        .onConflict(DSL.field("tg_id", Long::class.java)).doUpdate()
-        .set(DSL.field("state_id", Int::class.java), stateId)
-        .set(DSL.field("data", String::class.java), data)
+        .onConflict(DIALOGSTATE.TG_ID, DIALOGSTATE.STATE_ID).doUpdate()
+        .set(DIALOGSTATE.DATA, data)
         .execute()
       Unit
     }

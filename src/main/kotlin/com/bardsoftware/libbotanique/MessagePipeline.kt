@@ -83,9 +83,6 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
   val userName get() = this.fromUser?.userName ?: ""
   val chatId = update.message?.chatId
 
-  val dialogState: DialogState? by lazy {
-    this.userSession.state
-  }
   val userSession: UserSessionStorage get() = this.sessionProvider(userId)
 
   private var replyChatId = update.message?.chatId ?:  this.update.callbackQuery?.message?.chatId ?: -1
@@ -123,7 +120,7 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
 
   fun onDocument(whenState: Int? = null, code: DocumentHandler) {
     this.documentHandlers += {docs ->
-      if (whenState == null || this.dialogState?.state == whenState) {
+      if (whenState == null || !this.userSession.load(whenState).isNullOrBlank()) {
         code(docs)
       }
     }
@@ -151,7 +148,7 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
   fun onText(text: String, whenState: Int? = null, code: MessageHandler) {
     this.handlers += { msg ->
       if (msg == text) {
-        if (whenState == null || this.dialogState?.state == whenState) {
+        if (whenState == null || !this.userSession.load(whenState).isNullOrBlank()) {
           code(msg)
         }
       }
@@ -160,7 +157,7 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
 
   fun onInput(whenState: Int, code: MessageHandler) {
     this.handlers += {msg ->
-      if (this.userSession.state?.state == whenState) {
+      if (!this.userSession.load(whenState).isNullOrBlank()) {
         code(msg)
       }
     }
@@ -175,12 +172,9 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
     val regexp = pattern.toRegex(options)
     this.handlers += { msg ->
       regexp.matchEntire(msg.trim().replace("\n", ""))?.let {
-        if (whenState == null || this.dialogState?.state == whenState) {
+        if (whenState == null || !this.userSession.load(whenState).isNullOrBlank()) {
           code(it)
-        } else {
-          println("whenState=$whenState does not match the dialog state=${this.dialogState}")
         }
-
       }
     }
   }
@@ -410,24 +404,26 @@ data class DialogState(val state: Int, val data: String?) {
 fun User.displayName(): String = "${this.firstName} ${this.lastName ?: ""}"
 
 interface UserSessionStorage {
-  val state: DialogState?
-  fun reset()
+  fun load(stateId: Int): String?
+  fun reset(stateId: Int?)
   fun save(stateId: Int, data: String)
 }
 
 typealias UserSessionProvider = (Long) -> UserSessionStorage
 
 class UserSessionStorageMem: UserSessionStorage {
-  private var stateImpl = DialogState(-1, "")
-  override val state: DialogState?
-    get() = stateImpl
+  private val states = mutableMapOf<Int, String>()
 
-  override fun reset() {
-    stateImpl = DialogState(-1, "")
+  override fun load(stateId: Int): String? {
+    return states[stateId]
+  }
+
+  override fun reset(stateId: Int?) {
+    states.remove(stateId)
   }
 
   override fun save(stateId: Int, data: String) {
-    stateImpl = DialogState(stateId, data)
+    states[stateId] = data
   }
 }
 

@@ -4,13 +4,9 @@ import com.bardsoftware.embot.db.tables.records.EventviewRecord
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
 import com.bardsoftware.embot.db.tables.references.EVENTREGISTRATION
 import com.bardsoftware.embot.db.tables.references.EVENTSERIESSUBSCRIPTION
-import com.bardsoftware.libbotanique.BtnData
-import com.bardsoftware.libbotanique.ChainBuilder
-import com.bardsoftware.libbotanique.escapeMarkdown
-import com.bardsoftware.libbotanique.objectNode
+import com.bardsoftware.libbotanique.*
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
 data class RegistrationFlowStorageApi(
   val getCandidateIdList: () -> List<Int>?,
@@ -65,10 +61,9 @@ class RegistrationFlow(
     // -------------------------------------------------------------------------
     val remainingMembers = allMembers.filter { member  -> candidates.find { it.id == member.id } == null }
     val escapeFromMemberAdd = objectNode {
-      put("#", EMBotState.PARTICIPANT_SHOW_EVENT.id)
-      set<ObjectNode>("_", objectNode {
-        setEventId(event.id!!)
-      })
+      setSection(CbSection.EVENTS)
+      setCommand(CbEventCommand.REGISTER)
+      setEventId(event.id!!)
     }
     val buttons =
       remainingMembers.map { member ->
@@ -87,7 +82,10 @@ class RegistrationFlow(
         BtnData("OK \u2611", callbackData = json(payload) {
           setConfirmation()
         }),
-        BtnData("\uD83D\uDD19 Назад", callbackData = json(escapeFromMemberAdd){})
+        BtnData("\uD83D\uDD19 Назад", callbackData = json{
+          setSection(CbSection.EVENTS)
+          setCommand(CbEventCommand.LANDING)
+        })
       )
     outputApi.sendWhomAdd(candidates, buttons)
       // -------------------------------------------------------------------------
@@ -120,7 +118,9 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
       val msg = if (names.isNotBlank()) {
         """
           |*Нажмите кнопку ОК* чтобы зарегистрировать этот список\: 
+          |${"\\-".repeat(20)}
           |_${names.escapeMarkdown()}_
+          |${"\\-".repeat(20)}
           |
           |Добавляйте участников в список, используя кнопки с их именами\.
         """.trimMargin()
@@ -158,7 +158,7 @@ fun createOutputApiProd(tg: ChainBuilder, inputPayload: ObjectNode): Registratio
 fun createStorageApiProd(tg: ChainBuilder): RegistrationFlowStorageApi =
   RegistrationFlowStorageApi(
     getCandidateIdList = {
-      tg.userSession.state?.asJson()?.get("participant_ids")?.let { idList ->
+      tg.userSession.load(CbEventCommand.REGISTER.id)?.asJson()?.get("participant_ids")?.let { idList ->
         if (idList.isArray && idList is ArrayNode) {
           idList.mapNotNull {
             if (it.isInt) {
@@ -200,7 +200,7 @@ fun createStorageApiProd(tg: ChainBuilder): RegistrationFlowStorageApi =
     },
     getTeam = { participant -> participant.teamMembers() },
     close = {
-      tg.userSession.reset()
+      tg.userSession.reset(CbEventCommand.REGISTER.id)
     }
   )
 private fun ObjectNode.hasConfirmation() = this["y"]?.asBoolean() ?: false

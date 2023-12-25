@@ -97,4 +97,4 @@ FROM EventView EV JOIN EventRegistration ER ON EV.id = ER.event_id
     JOIN TgUser U1 ON P1.user_id = U1.tg_userid
 JOIN Participant P on ER.participant_id = P.id;
 
-create table DialogState(tg_id bigint primary key, state_id int, data text);
+create table DialogState(tg_id bigint, state_id int, data text, PRIMARY KEY(tg_id, state_id));

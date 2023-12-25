@@ -1,7 +1,6 @@
 package com.bardsoftware.embot
 
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
-import com.bardsoftware.embot.db.tables.records.ParticipantteamviewRecord
 import com.bardsoftware.embot.db.tables.references.PARTICIPANT
 import com.bardsoftware.embot.db.tables.references.PARTICIPANTTEAM
 import com.bardsoftware.embot.db.tables.references.PARTICIPANTTEAMVIEW
@@ -40,9 +39,13 @@ private fun participantInfoDialog(tg: ChainBuilder, registratorId: Int, command:
       validatorReply = "Введите неотрицательное число арабскими цифрами. Например: 13"
     )
     confirm("Создаём/обновляем?") {json ->
-      createTeamMember(json).onSuccess {
-        tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
-        tg.userSession.reset()
+      createTeamMember(json).onSuccess {teamMemberId ->
+        tg.reply("Готово", buttons = listOf(
+          BtnData("<< Назад", callbackData = json(exitPayload.asJson()!!) {
+            setTeamMemberId(teamMemberId)
+          })
+        ), isInplaceUpdate = true)
+        tg.userSession.reset(command.id)
         Ok(json)
       }
     }

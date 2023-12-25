@@ -75,7 +75,7 @@ fun ParticipantRecord.settingsModule(tg: ChainBuilder) {
     confirm("Сохранить изменения?") {json ->
       applySettings(json).andThen {
         tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
-        tg.userSession.reset()
+        tg.userSession.reset(SettingsCommand.CHANGE.id)
         Ok(Unit)
       }.mapError { " Что-то пошло не так" }
     }

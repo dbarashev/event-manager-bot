@@ -35,7 +35,7 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
   var exitPayload: String = "{}"
 
   val dialogData: ObjectNode by lazy {
-    tg.userSession.state?.asJson()?.also {
+    tg.userSession.load(id)?.asJson()?.also {
       LOG_DIALOG.debug("..read dialog data={}", it)
       exitPayload = it["esc"].toString()
     }

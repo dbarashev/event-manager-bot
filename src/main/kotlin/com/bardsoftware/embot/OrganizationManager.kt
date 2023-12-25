@@ -65,7 +65,7 @@ fun orgSettingsDialog(tg: ChainBuilder) {
     step(ORGANIZER.GOOGLE_SHEET_ID.name, DialogDataType.TEXT, "Google Sheet ID", "Идентификатор связанной Google таблицы. Прочитайте справку о том, как и зачем привязывать таблицу")
     confirm("Применить?") { json->
       updateOrg(json).andThen {
-        tg.userSession.reset()
+        tg.userSession.reset(OrgManagerCommand.ORG_SETTINGS.id)
         tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
         Ok(Unit)
       }.mapError { " Что-то пошло не так" }
@@ -99,7 +99,7 @@ fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand,
     confirm("Создаём/обновляем?") {json ->
       if (createEvent(tg.fromUser?.id, json)) {
         tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
-        tg.userSession.reset()
+        tg.userSession.reset(command.id)
         Ok(json)
       } else Err("Что-то пошло не так")
     }
