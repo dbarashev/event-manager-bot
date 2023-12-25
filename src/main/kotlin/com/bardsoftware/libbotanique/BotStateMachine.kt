@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory
 
 data class TgUser(val displayName: String, val id: String, val username: String)
 
-data class InputData(val stateJson: ObjectNode, val contextJson: ObjectNode, val user: TgUser)
+data class InputData(val stateJson: ObjectNode, val contextJson: ObjectNode, val user: TgUser, val command: String? = null)
 data class OutputData(val contextJson: ObjectNode)
 
 class State(val id: String, private val stateMachine: BotStateMachine) {
@@ -19,6 +19,7 @@ class State(val id: String, private val stateMachine: BotStateMachine) {
 
   var isSubset: Boolean = false
   var isIgnored: Boolean = false
+  var command: String? = null
 
   fun required(key: String, value: String) {
     requiredNode.put(key, value)
@@ -38,6 +39,11 @@ class State(val id: String, private val stateMachine: BotStateMachine) {
 
   fun matches(input: InputData): Boolean {
     if (isIgnored) return false
+    this.command?.let {
+      if (it == input.command) {
+        return true
+      }
+    }
     val requiredSet = requiredNode.fields().asSequence().toSet()
     val nodeSet = input.stateJson.fields().asSequence().toSet()
     if (!nodeSet.containsAll(requiredSet)) {

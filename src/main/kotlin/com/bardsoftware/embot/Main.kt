@@ -1,26 +1,46 @@
 package com.bardsoftware.embot
 
 import com.bardsoftware.embot.db.tables.records.ParticipantRecord
-import com.bardsoftware.embot.db.tables.references.*
+import com.bardsoftware.embot.db.tables.references.EVENTSERIESSUBSCRIPTION
+import com.bardsoftware.embot.db.tables.references.PARTICIPANT
+import com.bardsoftware.embot.db.tables.references.TGUSER
 import com.bardsoftware.libbotanique.*
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.github.michaelbull.result.onFailure
 import com.github.michaelbull.result.onSuccess
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.TelegramBotsApi
+import org.telegram.telegrambots.meta.api.methods.BotApiMethod
+import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands
 import org.telegram.telegrambots.meta.api.methods.updates.SetWebhook
 import org.telegram.telegrambots.meta.api.objects.Update
+import org.telegram.telegrambots.meta.api.objects.commands.BotCommand
 import org.telegram.telegrambots.updatesreceivers.DefaultBotSession
 import org.telegram.telegrambots.updatesreceivers.DefaultWebhook
+import java.io.Serializable
 
 fun main(args: Array<String>) {
   if (args.isNotEmpty() && args[0] == "poll") {
-    TelegramBotsApi(DefaultBotSession::class.java).registerBot(LongPollingConnector(::processMessage, testReplyChatId = null, testBecome = null))
+    TelegramBotsApi(DefaultBotSession::class.java).apply {
+      registerBot(LongPollingConnector(::processMessage, testReplyChatId = null, testBecome = null).also(::addMenuCommands))
+    }
   } else {
     TelegramBotsApi(DefaultBotSession::class.java, DefaultWebhook().also {
       it.setInternalUrl("http://0.0.0.0:8080")
-    }).registerBot(WebHookConnector(::processMessage), SetWebhook(System.getenv("TG_BOT_URL")))
+    }).apply {
+      registerBot(WebHookConnector(::processMessage).also(::addMenuCommands), SetWebhook(System.getenv("TG_BOT_URL")))
+    }
   }
+
+}
+
+private fun addMenuCommands(messageSender: MessageSender) {
+  messageSender.send(
+    SetMyCommands.builder().commands(listOf(
+      BotCommand("events", "Manage your events"),
+      BotCommand("team", "Manage your team"),
+      BotCommand("org", "If you are an event organizer")
+    )).build() as BotApiMethod<Serializable>)
 }
 
 const val CB_SECTION = "s"
@@ -69,6 +89,7 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.LANDING)
     }
+    command = "org"
     action(::OrgLandingAction)
   }
 
@@ -197,6 +218,7 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.TEAM)
       setCommand(CbTeamCommand.LANDING)
     }
+    command = "team"
     action(::TeamLandingAction)
   }
   state("TEAM_MEMBER_ADD") {
@@ -238,6 +260,7 @@ fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
       setSection(CbSection.EVENTS)
       setCommand(CbEventCommand.LANDING)
     }
+    command = "events"
     action(::ParticipantEventsAction)
   }
   state(EMBotState.PARTICIPANT_SHOW_EVENT) {
@@ -265,16 +288,18 @@ fun processMessage(update: Update, sender: MessageSender) {
   val user = TgUser(displayName = tg.fromUser?.displayName() ?: "", id = tg.fromUser?.id?.toString() ?: "", username = tg.fromUser?.userName ?: "")
 
   buildStateMachine().run {
-    val inputData = update.message?.text?.let {
-      if (it == "/start") {
+    val inputData = update.message?.text?.let {msg ->
+      if (msg == "/start") {
         InputData(objectNode { setSection(CbSection.LANDING) }, objectNode {  }, user)
-      } else if (it.startsWith("/start")) {
-        it.removePrefix("/start").trim().toIntOrNull()?.let {eventId ->
+      } else if (msg.startsWith("/start")) {
+        msg.removePrefix("/start").trim().toIntOrNull()?.let {eventId ->
           InputData(this.getState(EMBotState.PARTICIPANT_SHOW_EVENT.code)?.stateJson ?: objectNode {},
             objectNode { setEventId(eventId) },
             user
           )
         }
+      } else if (msg.startsWith("/")) {
+        InputData(objectNode {}, objectNode {}, user, command = msg.removePrefix("/"))
       } else null
     } ?:
       tg.callbackJson?.let {
