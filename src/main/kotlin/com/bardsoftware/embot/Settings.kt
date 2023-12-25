@@ -44,7 +44,9 @@ fun ParticipantRecord.settingsModule(tg: ChainBuilder) {
               setSection(CbSection.DIALOG)
               setDialogId(SettingsCommand.CHANGE.id)
             }),
-
+            BtnData("\uD83D\uDD19 Назад", callbackData = json {
+              setSection(CbSection.LANDING)
+            })
           ), isInplaceUpdate = true, isMarkdown = false
         )
       }

@@ -98,7 +98,7 @@ fun eventDialog(tg: ChainBuilder, titleMdwn: String, command: OrgManagerCommand,
     step("send_notifications", DialogDataType.BOOLEAN, "Нотификации", "Хотите получать уведомления о регистрациях?")
     confirm("Создаём/обновляем?") {json ->
       if (createEvent(tg.fromUser?.id, json)) {
-        tg.reply("Готово", buttons = listOf(escapeButton), isInplaceUpdate = true)
+        tg.reply("Готово. Событие пока что не опубликовано. Опубликовать можно, зайдя в его свойства.", buttons = listOf(escapeButton), isInplaceUpdate = true)
         tg.userSession.reset(command.id)
         Ok(json)
       } else Err("Что-то пошло не так")
