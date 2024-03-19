@@ -85,7 +85,7 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
 
   val userSession: UserSessionStorage get() = this.sessionProvider(userId)
 
-  private var replyChatId = update.message?.chatId ?:  this.update.callbackQuery?.message?.chatId ?: -1
+  var replyChatId = update.message?.chatId ?:  this.update.callbackQuery?.message?.chatId ?: -1
 
   private val callbackHandlers = mutableListOf<CallbackHandler>()
   private val documentHandlers = mutableListOf<DocumentHandler>()
@@ -258,7 +258,7 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
         !(this.update.message?.photo?.isNullOrEmpty() ?: true) -> {
           val docs = DocumentList(this.update.message.photo.map {
             Document(it.fileId, this.update.message.caption ?: "")
-          }.toList(), this.update.message)
+          }.toSet().toList(), this.update.message)
 
           for (h in documentHandlers) {
             h(docs)
@@ -406,6 +406,7 @@ fun User.displayName(): String = "${this.firstName} ${this.lastName ?: ""}"
 interface UserSessionStorage {
   fun load(stateId: Int): String?
   fun reset(stateId: Int?)
+  fun resetAll()
   fun save(stateId: Int, data: String)
 }
 
@@ -420,6 +421,10 @@ class UserSessionStorageMem: UserSessionStorage {
 
   override fun reset(stateId: Int?) {
     states.remove(stateId)
+  }
+
+  override fun resetAll() {
+    states.clear()
   }
 
   override fun save(stateId: Int, data: String) {

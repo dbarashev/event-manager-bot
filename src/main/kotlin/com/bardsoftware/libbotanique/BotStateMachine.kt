@@ -75,7 +75,10 @@ class State(val id: String, private val stateMachine: BotStateMachine) {
         text = if (builder.markdown.isNotBlank()) TextMessage(builder.markdown, TextMarkup.MARKDOWN) else TextMessage(builder.text),
         buttons = builder.buttonList
       )
-    }.mapError { it.message!! }}
+    }.mapError {
+      LOG.error("Failre when building a menu", it)
+      it.message!!
+    }}
   }
 
   override fun toString(): String {

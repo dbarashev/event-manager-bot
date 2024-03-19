@@ -86,6 +86,12 @@ class UserSessionImpl(private val tgUserId: Long): UserSessionStorage {
       Unit
     }
 
+  override fun resetAll() =
+    txn {
+      deleteFrom(DIALOGSTATE).where(DIALOGSTATE.TG_ID.eq(tgUserId)).execute()
+      Unit
+    }
+
   override fun save(stateId: Int, data: String) =
     txn {
       insertInto(DIALOGSTATE)
@@ -100,6 +106,7 @@ class UserSessionImpl(private val tgUserId: Long): UserSessionStorage {
         .execute()
       Unit
     }
+
 }
 
 fun userSessionProvider(tgUserId: Long) = UserSessionImpl(tgUserId)
