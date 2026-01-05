@@ -76,4 +76,25 @@ class TestStateEntering {
         }, objectNode {}, TgUser("test", "123", "test")), OutputUi(showButtons = {_, _ ->}))
         assertTrue(result is Ok)
     }
+
+    @Test fun `Two Matching States, First Registered Wins`() {
+        val sm = stateMachine {
+            state("STATE_B0") {
+                trigger {
+                    put("B", true)
+                }
+                menu {}
+            }
+            state("STATE_B1") {
+                trigger {
+                    put("B", true)
+                }
+            }
+        }
+        val result = sm.handle(InputData(objectNode {
+            put("B", true)
+        }, objectNode {}, TgUser("test", "123", "test")), OutputUi(showButtons = {_, _ ->}))
+        assertTrue(result is Ok)
+    }
+
 }
