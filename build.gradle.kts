@@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jooq.meta.jaxb.Property
 
 plugins {
-    kotlin("jvm") version "1.9.0"
+    kotlin("jvm") version "2.3.0"
     java
     application
     id("com.google.cloud.tools.jib") version "3.3.1"
@@ -43,10 +43,6 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-}
-
-tasks.withType<KotlinCompile> {
-    kotlinOptions.jvmTarget = "17"
 }
 
 application {
