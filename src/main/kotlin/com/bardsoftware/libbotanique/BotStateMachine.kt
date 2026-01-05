@@ -110,6 +110,8 @@ class ButtonTransition(
   val inplaceUpdate: Boolean = true
 )
 
+fun stateMachine(code: (BotStateMachine).()->Unit): BotStateMachine = BotStateMachine().apply(code)
+
 fun State.trigger(code: ObjectNode.()->Unit) {
   this.required(objectNode {code(this)})
 }
