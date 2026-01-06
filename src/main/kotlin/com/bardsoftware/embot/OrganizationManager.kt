@@ -118,7 +118,7 @@ fun unarchiveEvent(eventId: Int) = txn {
   update(EVENT).set(EVENT.IS_ARCHIVED, false).where(EVENT.ID.eq(eventId)).execute()
 }
 
-class OrgLandingAction(input: InputData): StateAction {
+class OrgLandingAction(input: InputEnvelope): StateAction {
   private val orgRecord: OrganizerRecord
   init {
     val orgs = getManagedOrganizations(input.user.id.toLong())
@@ -165,7 +165,7 @@ class OrgLandingAction(input: InputData): StateAction {
   ))
 }
 
-class OrgEventInfoAction(private val input: InputData): StateAction {
+class OrgEventInfoAction(private val input: InputEnvelope): StateAction {
   private val event: EventviewRecord
   private val participants: List<EventteamregistrationviewRecord>
   private val baseOutputJson: ObjectNode
@@ -217,7 +217,7 @@ class OrgEventInfoAction(private val input: InputData): StateAction {
 }
 
 class OrgEventParticipantListAction(private val participants: List<EventteamregistrationviewRecord>): StateAction {
-  constructor(input: InputData): this(
+  constructor(input: InputEnvelope): this(
     input.contextJson.getEventId()?.let(::getEventRecord)?.getParticipants() ?: throw RuntimeException("Can't fetch the list of participants from the database")
   )
 

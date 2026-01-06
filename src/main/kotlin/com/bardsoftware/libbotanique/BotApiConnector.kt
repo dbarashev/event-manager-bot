@@ -2,6 +2,10 @@ package com.bardsoftware.libbotanique
 
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.github.michaelbull.result.Err
+import com.github.michaelbull.result.Result
+import com.github.michaelbull.result.mapError
+import com.github.michaelbull.result.runCatching
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.bots.DefaultBotOptions
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
@@ -9,11 +13,13 @@ import org.telegram.telegrambots.bots.TelegramWebhookBot
 import org.telegram.telegrambots.meta.ApiConstants
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod
 import org.telegram.telegrambots.meta.api.methods.ForwardMessage
+import org.telegram.telegrambots.meta.api.methods.GetFile
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
 import org.telegram.telegrambots.meta.api.objects.Message
 import org.telegram.telegrambots.meta.api.objects.Update
 import java.io.Serializable
+import java.net.URI
 
 typealias MessageProcessor = (update: Update, sender: MessageSender) -> Unit
 
@@ -82,6 +88,16 @@ class LongPollingConnector(
       }
     }
   }
+
+  fun download(document: Document): Result<ByteArray, String> {
+    GetFile().apply {
+      fileId = document.docId
+      return execute(this)?.let {file ->
+        val downloadUrl = "https://api.telegram.org/file/bot${this@LongPollingConnector.botToken}/${file.filePath}"
+        runCatching { URI(downloadUrl).toURL().readBytes() }.mapError { it.message ?: "Unknown error" }
+      } ?: Err("Failed to download the file")
+    }
+  }
 }
 
 class WebHookConnector(private val processor: MessageProcessor) :
@@ -137,15 +153,15 @@ private fun createBotOptions() = DefaultBotOptions().apply {
 private val LOGGER = LoggerFactory.getLogger("Bot")
 
 fun emptyNode() = jacksonObjectMapper().createObjectNode()
-fun createOutputUi(tg: ChainBuilder, inputData: InputData, state: (String)->State?): OutputUi {
+fun createOutputUi(tg: ChainBuilder, inputEnvelope: InputEnvelope, state: (String)->State?): OutputUi {
   return OutputUi(
     showButtons = {text, transition ->
       tg.reply(text.text, isMarkdown = text.markup == TextMarkup.MARKDOWN, maxCols = transition.columnCount,
         isInplaceUpdate = transition.inplaceUpdate && tg.update.callbackQuery?.message?.messageId != null,
         buttons = transition.buttons.mapNotNull { (stateId, buttonBuilder) ->
           state(stateId)?.let {state ->
-            BtnData(buttonBuilder.label(inputData), callbackData = json(state.stateJson) {
-              put("_", buttonBuilder.output(inputData).contextJson)
+            BtnData(buttonBuilder.label(inputEnvelope), callbackData = json(state.stateJson) {
+              put("_", buttonBuilder.output(inputEnvelope).contextJson)
             })
           } ?: throw RuntimeException("State with ID=${stateId} not found")
         }.toList()
@@ -154,7 +170,7 @@ fun createOutputUi(tg: ChainBuilder, inputData: InputData, state: (String)->Stat
   )
 }
 
-private fun json(prototype: ObjectNode = jacksonObjectMapper().createObjectNode(),
-         builder: ObjectNode.() -> Unit) = prototype.deepCopy().apply(builder).toString()
+internal fun json(prototype: ObjectNode = jacksonObjectMapper().createObjectNode(),
+                  builder: ObjectNode.() -> Unit) = prototype.deepCopy().apply(builder).toString()
 
 private val LOG = LoggerFactory.getLogger("Bot")

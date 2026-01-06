@@ -74,13 +74,13 @@ fun <T> txn(code: DSLContext.() -> T): T =
 
 class UserSessionImpl(private val tgUserId: Long): UserSessionStorage {
 
-  override fun load(stateId: Int) = db {
+  override fun load(stateId: String) = db {
     selectFrom(DIALOGSTATE)
         .where(DIALOGSTATE.TG_ID.eq(tgUserId).and(DIALOGSTATE.STATE_ID.eq(stateId)))
         .firstOrNull()?.data
   }
 
-  override fun reset(stateId: Int?) =
+  override fun reset(stateId: String) =
     txn {
       deleteFrom(DIALOGSTATE).where(DIALOGSTATE.TG_ID.eq(tgUserId).and(DIALOGSTATE.STATE_ID.eq(stateId))).execute()
       Unit
@@ -92,7 +92,7 @@ class UserSessionImpl(private val tgUserId: Long): UserSessionStorage {
       Unit
     }
 
-  override fun save(stateId: Int, data: String) =
+  override fun save(stateId: String, data: String) =
     txn {
       insertInto(DIALOGSTATE)
         .columns(

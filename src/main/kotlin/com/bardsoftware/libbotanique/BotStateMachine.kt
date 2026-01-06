@@ -6,12 +6,8 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.michaelbull.result.*
 import org.slf4j.LoggerFactory
 
-data class TgUser(val displayName: String, val id: String, val username: String)
 
-data class InputData(val stateJson: ObjectNode, val contextJson: ObjectNode, val user: TgUser, val command: String? = null)
-data class OutputData(val contextJson: ObjectNode)
-
-class State(val id: String, private val stateMachine: BotStateMachine) {
+class State(val id: String, internal val stateMachine: BotStateMachine) {
   private val requiredNode = jacksonObjectMapper().createObjectNode()
   private val requiredPredicates = mutableMapOf<String, (JsonNode)->Boolean>()
 
@@ -37,7 +33,7 @@ class State(val id: String, private val stateMachine: BotStateMachine) {
     requiredPredicates[key] = predicate
   }
 
-  fun matches(input: InputData): Boolean {
+  fun matches(input: InputEnvelope): Boolean {
     if (isIgnored) return false
     this.command?.let {
       if (it == input.command) {
@@ -62,16 +58,16 @@ class State(val id: String, private val stateMachine: BotStateMachine) {
     }
   }
 
-  fun action(code: (InputData) -> StateAction) {
+  fun action(code: (InputEnvelope) -> StateAction) {
     stateMachine.action(id) { runCatching { code(it) }.mapError { it.message!! }}
   }
 
-  fun menu(code: (ButtonStateBuilder).(InputData) -> Unit) {
+  fun menu(code: (ButtonStateBuilder).(InputEnvelope) -> Unit) {
     stateMachine.action(id) { input -> runCatching {
       val builder = ButtonStateBuilder().apply {
         this.code(input)
       }
-      ButtonsAction(
+       ButtonsAction(
         text = if (builder.markdown.isNotBlank()) TextMessage(builder.markdown, TextMarkup.MARKDOWN) else TextMessage(builder.text),
         buttons = builder.buttonList
       )
@@ -94,11 +90,16 @@ class ButtonStateBuilder(var text: String = "", var markdown: String = "", var b
   }
 }
 
-fun identityOutput(input: InputData) = OutputData(input.contextJson)
+fun identityOutput(input: InputEnvelope) = OutputData(input.stateJson)
 
-data class ButtonBuilder(val label: (InputData)->String, val output: (InputData)->OutputData = ::identityOutput)
+data class ButtonBuilder(val label: (InputEnvelope)->String, val output: (InputEnvelope)->OutputData = ::identityOutput)
+
+/**
+ * This class groups functions that render the bot output elements.
+ */
 data class OutputUi(
-  val showButtons: (TextMessage, ButtonTransition)->Unit
+  /** Shows a text message with a list of callback buttons. */
+  val showButtons: (TextMessage, ButtonTransition)->Unit,
 )
 enum class TextMarkup {
   PLAIN, MARKDOWN
@@ -110,7 +111,7 @@ class ButtonTransition(
   val inplaceUpdate: Boolean = true
 )
 
-fun stateMachine(code: (BotStateMachine).()->Unit): BotStateMachine = BotStateMachine().apply(code)
+fun stateMachine(sessionProvider: UserSessionProvider, code: (BotStateMachine).()->Unit): BotStateMachine = BotStateMachine(sessionProvider).apply(code)
 
 fun State.trigger(code: ObjectNode.()->Unit) {
   this.required(objectNode {code(this)})
@@ -130,7 +131,7 @@ class ButtonsAction(
 }
 
 class SimpleAction(
-  text: String, returnState: String, input: InputData, code: (InputData)->Unit): StateAction {
+  text: String, returnState: String, input: InputEnvelope, code: (InputEnvelope)->Unit): StateAction {
   override val text = TextMessage(text)
 
   override val buttonTransition = ButtonTransition(listOf(
@@ -142,32 +143,40 @@ class SimpleAction(
   }
 }
 
-class BotStateMachine {
+class BotStateMachine(internal val sessionProvider: UserSessionProvider) {
   private val states = mutableMapOf<String, State>()
   //private val transitions = mutableMapOf<String, (InputData)->Result<ButtonTransition, String>>()
-  private val actions = mutableMapOf<String, (InputData)->Result<StateAction, String>>()
+  private val actions = mutableMapOf<String, (InputEnvelope)->Result<StateAction, String>>()
   fun getState(id: String) = states[id]
 
-  fun state(id: String, code: State.()->Unit) {
-    registerState(State(id, this).apply(code))
+  fun landing(code: State.()->Unit) {
+    State(landingStateId, this).apply {
+      registerState(this.apply(code))
+    }
+  }
+
+  val landingStateId = "START"
+
+  fun state(id: String, shortId: String = id, code: State.()->Unit) {
+    State(id,  this).apply {
+      registerState(this.apply(code))
+      if (shortId.isNotBlank()) required("#", shortId)
+    }
   }
 
   fun state(id: Int, code: State.()->Unit) {
-    State(id.toString(), this).apply {
-      registerState(this.apply(code))
-      required("#", id)
-    }
+    state(id.toString(), code = code)
   }
 
   fun registerState(state: State) {
     states[state.id] = state
   }
 
-  fun action(fromStateId: String, action: (InputData)->Result<StateAction, String>) {
+  fun action(fromStateId: String, action: (InputEnvelope)->Result<StateAction, String>) {
     actions[fromStateId] = action
   }
 
-  fun handle(input: InputData, outputUi: OutputUi): Result<State, String> {
+  fun handle(input: InputEnvelope, outputUi: OutputUi): Result<State, String> {
     val state = states.entries.firstOrNull { it.value.matches(input) }?.value ?: return Err("The input doesn't match any state")
     LOG.debug("Entered state {}", state)
     val stateAction = actions[state.id] ?: return Err("No action is registered for state ${state.id}")

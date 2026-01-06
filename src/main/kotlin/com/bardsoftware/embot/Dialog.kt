@@ -8,26 +8,8 @@ import com.github.michaelbull.result.Result
 import com.github.michaelbull.result.onFailure
 import com.github.michaelbull.result.runCatching
 import org.slf4j.LoggerFactory
-import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-
-enum class DialogDataType {
-  TEXT, INT, NUMBER, DATE, LOCATION, BOOLEAN
-}
-
-data class LatLon(val lat: BigDecimal, val lon: BigDecimal) {
-  override fun toString() = "$lat,$lon"
-
-  fun asGoogleLink() = "https://www.google.com/maps/search/?api=1&query=$lat%2C$lon"
-}
-data class DialogStep(
-  val fieldName: String,
-  val question: String,
-  val dataType: DialogDataType,
-  val shortLabel: String,
-  val invalidValueReply: String = ""
-)
 
 data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
   private val steps = mutableListOf<DialogStep>()
@@ -50,7 +32,7 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
   val escapeButton get() = BtnData("<< Назад", callbackData = exitPayload)
 
   fun step(id: String, type: DialogDataType, shortLabel: String, prompt: String, validatorReply: String = "") {
-    steps.add(DialogStep(id, prompt, type, shortLabel, validatorReply))
+    steps.add(DialogStep(fieldName = id, question = prompt, dataType = type, shortLabel = shortLabel, invalidValueReply = validatorReply))
   }
 
   fun confirm(question: String, onOk: (ObjectNode)-> Result<Any, String>) {
@@ -152,6 +134,7 @@ data class Dialog(val tg: ChainBuilder, val id: Int, val intro: String) {
       DialogDataType.DATE -> msg.toDate() is Ok
       DialogDataType.LOCATION -> msg.toLatLon() is Ok
       DialogDataType.BOOLEAN -> msg.toBool() is Ok
+      else -> true
     }
     if (!isValueValid) {
       println("value $msg is not valid, reply: ${expectedStep.invalidValueReply}")
@@ -204,17 +187,6 @@ fun String.toLatLon() = Result.runCatching {
   LatLon(strLat.toBigDecimal(), strLon.toBigDecimal())
 }.onFailure { it.printStackTrace() }
 
-fun String.toBool() = Result.runCatching {
-  this@toBool.trim().lowercase().let {
-    if (setOf("1", "true", "y", "yes").contains(it)) {
-      true
-    } else if (setOf("0", "false", "no", "n").contains(it)) {
-      false
-    } else {
-      throw IllegalArgumentException("Can't parse $it as boolean")
-    }
-  }
-}
 fun json(prototype: ObjectNode = jacksonObjectMapper().createObjectNode(),
          builder: ObjectNode.() -> Unit) = prototype.deepCopy().apply(builder).toString()
 

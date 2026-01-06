@@ -12,7 +12,7 @@ import org.jooq.types.DayToSecond
 import java.time.Duration
 
 class ParticipantEventsAction(private val participant: ParticipantRecord): StateAction {
-  constructor(inputData: InputData): this(inputData.getOrCreateParticipant())
+  constructor(inputEnvelope: InputEnvelope): this(inputEnvelope.getOrCreateParticipant())
   override val text get() = TextMessage("Ваши события:")
   override val buttonTransition get() = ButtonTransition(
     buttons = getAvailableEvents(participant).map { eventRecord ->
@@ -31,12 +31,12 @@ class ParticipantShowEventAction(
   private val event: EventviewRecord,
   private val registeredTeam: List<EventteamregistrationviewRecord>): StateAction {
 
-  constructor(inputData: InputData): this(
-    event = inputData.contextJson.getEventId()?.let(::getEventRecord) ?: throw IllegalArgumentException("Event ID not found in the input"),
+  constructor(inputEnvelope: InputEnvelope): this(
+    event = inputEnvelope.contextJson.getEventId()?.let(::getEventRecord) ?: throw IllegalArgumentException("Event ID not found in the input"),
     registeredTeam = db {
       selectFrom(EVENTTEAMREGISTRATIONVIEW).where(
-        EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(inputData.user.id.toLong())
-          .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(inputData.contextJson.getEventId() ?: throw IllegalArgumentException("Event ID not found in the input")))
+        EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(inputEnvelope.user.id.toLong())
+          .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(inputEnvelope.contextJson.getEventId() ?: throw IllegalArgumentException("Event ID not found in the input")))
       ).toList()
     }
   )
@@ -62,19 +62,19 @@ class ParticipantShowEventAction(
   )
 }
 
-class ParticipantUnregisterAction(inputData: InputData): StateAction {
+class ParticipantUnregisterAction(inputEnvelope: InputEnvelope): StateAction {
   override val text = TextMessage("Регистрация отменена.")
   override val buttonTransition = ButtonTransition(buttons = listOf(
     EMBotState.PARTICIPANT_SHOW_EVENT.code to ButtonBuilder({"\ud83d\udd19 Назад к событию"})
   ))
 
   init {
-    val eventId = inputData.contextJson.getEventId() ?: throw IllegalArgumentException("Event ID not found in the input data")
+    val eventId = inputEnvelope.contextJson.getEventId() ?: throw IllegalArgumentException("Event ID not found in the input data")
     db {
       deleteFrom(EVENTREGISTRATION).where(EVENTREGISTRATION.PARTICIPANT_ID.`in`(
         select(EVENTTEAMREGISTRATIONVIEW.PARTICIPANT_ID)
           .from(EVENTTEAMREGISTRATIONVIEW)
-          .where(EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(inputData.user.id.toLong())
+          .where(EVENTTEAMREGISTRATIONVIEW.REGISTRANT_TGUSERID.eq(inputEnvelope.user.id.toLong())
             .and(EVENTTEAMREGISTRATIONVIEW.ID.eq(eventId))
           )
       )).execute()
@@ -134,7 +134,7 @@ fun getAvailableEvents(participant: ParticipantRecord): List<EventRecord> =
     }.toList()
   }
 
-fun InputData.getOrCreateParticipant() =
+fun InputEnvelope.getOrCreateParticipant() =
   getOrCreateParticipant(this.user.id.toLong(), this.user.username, 1)
 
 fun ObjectNode.getEventId() = this["e"]?.asInt()

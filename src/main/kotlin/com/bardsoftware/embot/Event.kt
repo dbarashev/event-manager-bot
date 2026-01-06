@@ -2,12 +2,16 @@ package com.bardsoftware.embot
 
 import com.bardsoftware.embot.db.tables.records.EventRecord
 import com.bardsoftware.embot.db.tables.records.EventviewRecord
+import com.bardsoftware.libbotanique.LatLon
 import com.bardsoftware.libbotanique.escapeMarkdown
 import java.time.LocalDateTime
 
 fun EventRecord.formatUncheckedLabel() = """${this.title} / ${this.start!!.toLocalDate()} ${this.start!!.toLocalTime()}"""
 
-fun EventviewRecord.getGeoLocation() = if (primaryLat != null && primaryLat != null) LatLon(primaryLat!!, primaryLon!!) else null
+fun EventviewRecord.getGeoLocation() = if (primaryLat != null && primaryLat != null) LatLon(
+    primaryLat!!,
+    primaryLon!!
+) else null
 
 fun EventviewRecord.buttonLabel() = "$title " + when {
   isArchived == true && start!!.isAfter(LocalDateTime.now()) -> "[не опубликованное]"

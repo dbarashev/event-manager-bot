@@ -7,94 +7,66 @@ import kotlin.test.assertTrue
 
 
 class TestStateEntering {
+    private val VOID_OUTPUT = OutputUi(showButtons = {_, _ ->})
+    private val TEST_USER = TgUser("test", "123", "test")
     @Test
     fun `Empty StateMachine Matches Nothing`() {
-        val sm = stateMachine {
+        val sm = stateMachine(::userSessionProviderMem) {
         }
         val result = sm.handle(
-            InputData(objectNode {}, objectNode {}, TgUser("test", "123", "test")),
-            OutputUi(showButtons = {_, _ ->})
+            InputEnvelope(objectNode {}, objectNode {}, TEST_USER),
+            VOID_OUTPUT
         )
         assertTrue(result is Err)
     }
 
     @Test fun `States Are Registered But Do Not Match`() {
-        val sm = stateMachine {
-            state("STATE_A") {
-                trigger {
-                    put("A", true)
-                }
-            }
-            state("STATE_B") {
-                trigger {
-                    put("B", true)
-                }
-            }
+        val sm = stateMachine(::userSessionProviderMem) {
+            state("STATE_A", "A") {}
+            state("STATE_B", "B") {}
         }
-        val result = sm.handle(InputData(objectNode {
-            put("A", false)
-        }, objectNode {}, TgUser("test", "123", "test")), OutputUi(showButtons = {_, _ ->}))
+        val result = sm.handle(InputEnvelope(objectNode {
+            put("#", "C")
+        }, objectNode {}, TEST_USER), VOID_OUTPUT)
         assertTrue(result is Err)
     }
 
     @Test fun `State Matches But No Action Registered`() {
-        val sm = stateMachine {
-            state("STATE_A") {
-                trigger {
-                    put("A", true)
-                }
-            }
-            state("STATE_B") {
-                trigger {
-                    put("B", true)
-                }
-            }
+        val sm = stateMachine(::userSessionProviderMem) {
+            state("STATE_A", "A") {}
+            state("STATE_B", "B") {}
         }
-        val result = sm.handle(InputData(objectNode {
-            put("B", true)
-        }, objectNode {}, TgUser("test", "123", "test")), OutputUi(showButtons = {_, _ ->}))
+        val result = sm.handle(InputEnvelope(objectNode {
+            put("#", "B")
+        }, objectNode {}, TEST_USER), VOID_OUTPUT)
         assertTrue(result is Err)
-        assertTrue(result.error.contains("No action is registered"))
+        assertTrue(result.error.contains("No action is registered"), result.error)
     }
 
     @Test fun `State Matches And Action Is Registered`() {
-        val sm = stateMachine {
-            state("STATE_A") {
-                trigger {
-                    put("A", true)
-                }
-            }
-            state("STATE_B") {
-                trigger {
-                    put("B", true)
-                }
+        val sm = stateMachine(::userSessionProviderMem) {
+            state("STATE_A", "A") {}
+            state("STATE_B", "B") {
                 menu {}
             }
         }
-        val result = sm.handle(InputData(objectNode {
-            put("B", true)
-        }, objectNode {}, TgUser("test", "123", "test")), OutputUi(showButtons = {_, _ ->}))
+        val result = sm.handle(InputEnvelope(objectNode {
+            put("#", "B")
+        }, objectNode {}, TEST_USER), VOID_OUTPUT)
         assertTrue(result is Ok)
     }
 
     @Test fun `Two Matching States, First Registered Wins`() {
-        val sm = stateMachine {
-            state("STATE_B0") {
-                trigger {
-                    put("B", true)
-                }
+        val sm = stateMachine(::userSessionProviderMem) {
+            state("STATE_B0", "B") {
                 menu {}
             }
-            state("STATE_B1") {
-                trigger {
-                    put("B", true)
-                }
+            state("STATE_B1", "B") {
             }
         }
-        val result = sm.handle(InputData(objectNode {
-            put("B", true)
-        }, objectNode {}, TgUser("test", "123", "test")), OutputUi(showButtons = {_, _ ->}))
+        val result = sm.handle(InputEnvelope(objectNode {
+            put("#", "B")
+        }, objectNode {}, TEST_USER), VOID_OUTPUT)
         assertTrue(result is Ok)
     }
-
 }

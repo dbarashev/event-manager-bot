@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.github.michaelbull.result.Err
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod
 import org.telegram.telegrambots.meta.api.methods.ParseMode
@@ -35,7 +36,6 @@ typealias CallbackHandler = (ObjectNode) -> Unit
 typealias MessageHandler = (String) -> Unit
 typealias MatchHandler = (MatchResult) -> Unit
 
-data class Document(val docId: String, val caption: String = "")
 data class DocumentList(val docs : List<Document>, val container: Message)
 
 typealias DocumentHandler = (DocumentList) -> Unit
@@ -74,7 +74,7 @@ enum class MessageSource {
   DIRECT
 }
 
-open class ChainBuilder(val update: Update, internal val sendMessage: MessageSender, internal val sessionProvider: UserSessionProvider) {
+open class ChainBuilder(val update: Update, internal val sendMessage: MessageSender, val sessionProvider: UserSessionProvider) {
   val messageText = (update.message?.text ?: "").trim()
   val fromUser get() = update.message?.from ?: update.callbackQuery?.from
   val messageId = update.callbackQuery?.message?.messageId ?: update.message?.messageId
@@ -257,7 +257,7 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
       when {
         !(this.update.message?.photo?.isNullOrEmpty() ?: true) -> {
           val docs = DocumentList(this.update.message.photo.map {
-            Document(it.fileId, this.update.message.caption ?: "")
+            Document(it.fileId, this.update.message.caption ?: "", { Err("Not implemented") })
           }.toSet().toList(), this.update.message)
 
           for (h in documentHandlers) {
@@ -268,7 +268,7 @@ open class ChainBuilder(val update: Update, internal val sendMessage: MessageSen
           }
         }
         this.update.message?.document != null -> {
-          val docs = DocumentList(listOf(Document(this.update.message.document.fileId, this.update.message.caption ?: "")), this.update.message)
+          val docs = DocumentList(listOf(Document(this.update.message.document.fileId, this.update.message.caption ?: "", { Err("Not implemented")})), this.update.message)
           for (h in documentHandlers) {
             h(docs)
             if (this.stopped) {
@@ -403,34 +403,3 @@ data class DialogState(val state: Int, val data: String?) {
 
 fun User.displayName(): String = "${this.firstName} ${this.lastName ?: ""}"
 
-interface UserSessionStorage {
-  fun load(stateId: Int): String?
-  fun reset(stateId: Int?)
-  fun resetAll()
-  fun save(stateId: Int, data: String)
-}
-
-typealias UserSessionProvider = (Long) -> UserSessionStorage
-
-class UserSessionStorageMem: UserSessionStorage {
-  private val states = mutableMapOf<Int, String>()
-
-  override fun load(stateId: Int): String? {
-    return states[stateId]
-  }
-
-  override fun reset(stateId: Int?) {
-    states.remove(stateId)
-  }
-
-  override fun resetAll() {
-    states.clear()
-  }
-
-  override fun save(stateId: Int, data: String) {
-    states[stateId] = data
-  }
-}
-
-private val userSessionMap = mutableMapOf<Long, UserSessionStorageMem>()
-fun userSessionProviderMem(tgUserId: Long) = userSessionMap.computeIfAbsent(tgUserId) { UserSessionStorageMem() }

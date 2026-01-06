@@ -91,9 +91,9 @@ fun ParticipantRecord.teamManagementCallbacks(tg: ChainBuilder) {
 }
 
 class TeamLandingAction(private val teamMemberList: List<ParticipantRecord>, private val leaderId: Int): StateAction {
-  constructor(inputData: InputData): this(
-    teamMembers(inputData.user.id.toLong()),
-    getParticipant(inputData.user.id.toLong())?.id ?: throw RuntimeException("Can't find participant record in the database")
+  constructor(inputEnvelope: InputEnvelope): this(
+    teamMembers(inputEnvelope.user.id.toLong()),
+    getParticipant(inputEnvelope.user.id.toLong())?.id ?: throw RuntimeException("Can't find participant record in the database")
   )
 
   override val text = TextMessage(
@@ -124,11 +124,11 @@ class TeamLandingAction(private val teamMemberList: List<ParticipantRecord>, pri
 }
 
 class TeamMemberInfoAction(teamMember: ParticipantRecord, private val leaderId: Int): StateAction {
-  constructor(inputData: InputData): this(
+  constructor(inputEnvelope: InputEnvelope): this(
     db {
-      inputData.contextJson.getTeamMemberId()?.let(::getParticipant) ?: throw RuntimeException("Can't find a team member record in the database")
+      inputEnvelope.contextJson.getTeamMemberId()?.let(::getParticipant) ?: throw RuntimeException("Can't find a team member record in the database")
     },
-    inputData.contextJson.getTeamLeaderId() ?: throw RuntimeException("Can't find a team leader field in the context")
+    inputEnvelope.contextJson.getTeamLeaderId() ?: throw RuntimeException("Can't find a team leader field in the context")
   )
 
 

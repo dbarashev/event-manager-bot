@@ -69,7 +69,7 @@ enum class EMBotState(val id: Int) {
 }
 
 private fun BotStateMachine.state(state: EMBotState, code: State.()->Unit) = this.state(state.id, code)
-fun buildStateMachine(): BotStateMachine = BotStateMachine().apply {
+fun buildStateMachine(sessionProvider: UserSessionProvider): BotStateMachine = BotStateMachine(sessionProvider).apply {
   state("START") {
     trigger {
       setSection(CbSection.LANDING)
@@ -287,29 +287,29 @@ fun processMessage(update: Update, sender: MessageSender) {
   val tg = ChainBuilder(update, sender, ::userSessionProvider)
   val user = TgUser(displayName = tg.fromUser?.displayName() ?: "", id = tg.fromUser?.id?.toString() ?: "", username = tg.fromUser?.userName ?: "")
 
-  buildStateMachine().run {
-    val inputData = update.message?.text?.let {msg ->
+  buildStateMachine(tg.sessionProvider).run {
+    val inputEnvelope = update.message?.text?.let { msg ->
       if (msg == "/start") {
-        InputData(objectNode { setSection(CbSection.LANDING) }, objectNode {  }, user)
+        InputEnvelope(objectNode { setSection(CbSection.LANDING) }, objectNode {  }, user)
       } else if (msg.startsWith("/start")) {
         msg.removePrefix("/start").trim().toIntOrNull()?.let {eventId ->
-          InputData(this.getState(EMBotState.PARTICIPANT_SHOW_EVENT.code)?.stateJson ?: objectNode {},
+          InputEnvelope(this.getState(EMBotState.PARTICIPANT_SHOW_EVENT.code)?.stateJson ?: objectNode {},
             objectNode { setEventId(eventId) },
             user
           )
         }
       } else if (msg.startsWith("/")) {
-        InputData(objectNode {}, objectNode {}, user, command = msg.removePrefix("/"))
+        InputEnvelope(objectNode {}, objectNode {}, user, command = msg.removePrefix("/"))
       } else null
     } ?:
       tg.callbackJson?.let {
         val contextJson = it.remove("_") as? ObjectNode ?: objectNode {}
-        InputData(it, contextJson = contextJson, user)
-      } ?: InputData(objectNode {}, objectNode {}, user)
+        InputEnvelope(it, contextJson = contextJson, user)
+      } ?: InputEnvelope(objectNode {}, objectNode {}, user)
 
-    val outputUi = createOutputUi(tg, inputData, this::getState)
+    val outputUi = createOutputUi(tg, inputEnvelope, this::getState)
 
-    handle(inputData, outputUi)
+    handle(inputEnvelope, outputUi)
   }.onSuccess { tg.sendReplies() }.onFailure {
     LOG_INPUT.warn("Failed to process with the state machine: {}", it)
     tg.callbackJson?.let {callbackJson ->
