@@ -158,12 +158,12 @@ fun createOutputUi(tg: ChainBuilder, inputEnvelope: InputEnvelope, state: (Strin
     showButtons = {text, transition ->
       tg.reply(text.text, isMarkdown = text.markup == TextMarkup.MARKDOWN, maxCols = transition.columnCount,
         isInplaceUpdate = transition.inplaceUpdate && tg.update.callbackQuery?.message?.messageId != null,
-        buttons = transition.buttons.mapNotNull { (stateId, buttonBuilder) ->
-          state(stateId)?.let {state ->
+        buttons = transition.buttons.mapNotNull { buttonBuilder ->
+          state(buttonBuilder.targetState)?.let {state ->
             BtnData(buttonBuilder.label, callbackData = json(state.stateJson) {
               put("_", buttonBuilder.output(inputEnvelope).contextJson)
             })
-          } ?: throw RuntimeException("State with ID=${stateId} not found")
+          } ?: throw RuntimeException("State with ID=${buttonBuilder.targetState} not found")
         }.toList()
       )
     }

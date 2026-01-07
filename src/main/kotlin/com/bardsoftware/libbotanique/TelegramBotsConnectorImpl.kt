@@ -26,12 +26,12 @@ class TelegramBotsMessageProcessor(private val stateMachine: BotStateMachine) {
         return OutputUi(
             showButtons = {text, transition ->
                 val inplaceUpdate = transition.inplaceUpdate && update.callbackQuery?.message?.messageId != null
-                val buttons = transition.buttons.map { (stateId, buttonBuilder) ->
-                    stateMachine.getState(stateId)?.let {state ->
+                val buttons = transition.buttons.map { buttonBuilder ->
+                    stateMachine.getState(buttonBuilder.targetState)?.let {state ->
                         BtnData(buttonBuilder.label, callbackData = json(state.stateJson) {
                             put("_", buttonBuilder.output(inputEnvelope).contextJson)
                         })
-                    } ?: throw RuntimeException("State with ID=${stateId} not found")
+                    } ?: throw RuntimeException("State with ID=${buttonBuilder.targetState} not found")
                 }.toList()
                 val isMarkdown = text.markup == TextMarkup.MARKDOWN
                 val replyText = text.text.ifBlank { "ПУСТОЙ ОТВЕТ" }

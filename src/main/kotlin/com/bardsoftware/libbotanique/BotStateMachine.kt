@@ -108,7 +108,7 @@ enum class TextMarkup {
 
 data class TextMessage(val text: String, val markup: TextMarkup = TextMarkup.PLAIN)
 class ButtonBlock(
-  val buttons: List<Pair<String, ButtonBuilder>>,
+  val buttons: List<ButtonBuilder>,
   val columnCount: Int = 1,
   val inplaceUpdate: Boolean = true
 )
@@ -129,7 +129,7 @@ class ButtonsAction(
   val buttons: List<Pair<String, ButtonBuilder>>): StateAction {
 
   override val buttonBlock: ButtonBlock
-    get() = ButtonBlock(buttons)
+    get() = ButtonBlock(buttons.map { it.second })
 }
 
 class SimpleAction(
@@ -137,7 +137,7 @@ class SimpleAction(
   override val text = TextMessage(text)
 
   override val buttonBlock = ButtonBlock(listOf(
-    returnState to ButtonBuilder(returnState,"<< Назад")
+    ButtonBuilder(returnState,"<< Назад")
   ))
 
   init {

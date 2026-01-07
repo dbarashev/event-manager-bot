@@ -16,13 +16,13 @@ class ParticipantEventsAction(private val participant: ParticipantRecord): State
   override val text get() = TextMessage("Ваши события:")
   override val buttonBlock get() = ButtonBlock(
     buttons = getAvailableEvents(participant).map { eventRecord ->
-      EMBotState.PARTICIPANT_SHOW_EVENT.code to ButtonBuilder(EMBotState.PARTICIPANT_SHOW_EVENT.code,eventRecord.formatUncheckedLabel()) {
+      ButtonBuilder(EMBotState.PARTICIPANT_SHOW_EVENT.code,eventRecord.formatUncheckedLabel()) {
         OutputData(objectNode {
           setEventId(eventRecord.id!!)
         }
       )}
     }.toList() + listOf(
-      "PARTICIPANT_LANDING" to ButtonBuilder("PARTICIPANT_LANDING","\ud83d\udd19 Назад")
+      ButtonBuilder("PARTICIPANT_LANDING","\ud83d\udd19 Назад")
     )
   )
 }
@@ -51,13 +51,13 @@ class ParticipantShowEventAction(
 
   override val buttonBlock = ButtonBlock(
     buttons = listOf(
-      "PARTICIPANT_REGISTER" to ButtonBuilder("PARTICIPANT_REGISTER","Регистрация \u23E9") {
+      ButtonBuilder("PARTICIPANT_REGISTER","Регистрация \u23E9") {
         OutputData(objectNode { setEventId(event.id!!) })
       }) + if (registeredTeam.isEmpty()) emptyList() else listOf(
-      EMBotState.PARTICIPANT_UNREGISTER.code to ButtonBuilder(EMBotState.PARTICIPANT_UNREGISTER.code,"Отменить регистрацию полностью") {
+      ButtonBuilder(EMBotState.PARTICIPANT_UNREGISTER.code,"Отменить регистрацию полностью") {
         OutputData(objectNode { setEventId(event.id!!) })
       }) + listOf(
-      "PARTICIPANT_EVENTS" to ButtonBuilder("PARTICIPANT_EVENTS","\ud83d\udd19 Назад")
+      ButtonBuilder("PARTICIPANT_EVENTS","\ud83d\udd19 Назад")
       )
   )
 }
@@ -65,7 +65,7 @@ class ParticipantShowEventAction(
 class ParticipantUnregisterAction(inputEnvelope: InputEnvelope): StateAction {
   override val text = TextMessage("Регистрация отменена.")
   override val buttonBlock = ButtonBlock(buttons = listOf(
-    EMBotState.PARTICIPANT_SHOW_EVENT.code to ButtonBuilder(EMBotState.PARTICIPANT_SHOW_EVENT.code,"\ud83d\udd19 Назад к событию")
+    ButtonBuilder(EMBotState.PARTICIPANT_SHOW_EVENT.code,"\ud83d\udd19 Назад к событию")
   ))
 
   init {
