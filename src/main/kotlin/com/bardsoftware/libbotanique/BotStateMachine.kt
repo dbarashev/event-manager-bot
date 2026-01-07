@@ -85,27 +85,29 @@ class State(val id: String, internal val stateMachine: BotStateMachine) {
 class ButtonStateBuilder(var text: String = "", var markdown: String = "", var buttonList: List<Pair<String, ButtonBuilder>> = emptyList()) {
   fun buttons(vararg buttons: Pair<String, String>) {
     buttonList = buttons.map { (label, outState) ->
-      outState to ButtonBuilder(label = {label})
+      outState to ButtonBuilder(outState, label = label)
     }
   }
 }
 
 fun identityOutput(input: InputEnvelope) = OutputData(input.stateJson)
 
-data class ButtonBuilder(val label: (InputEnvelope)->String, val output: (InputEnvelope)->OutputData = ::identityOutput)
+data class ButtonBuilder(val targetState: String, val label: String, val output: (InputEnvelope)->OutputData = ::identityOutput)
+
 
 /**
  * This class groups functions that render the bot output elements.
  */
 data class OutputUi(
-  /** Shows a text message with a list of callback buttons. */
-  val showButtons: (TextMessage, ButtonTransition)->Unit,
+    /** Shows a text message with a list of callback buttons. */
+  val showButtons: (TextMessage, ButtonBlock)->Unit,
 )
 enum class TextMarkup {
   PLAIN, MARKDOWN
 }
+
 data class TextMessage(val text: String, val markup: TextMarkup = TextMarkup.PLAIN)
-class ButtonTransition(
+class ButtonBlock(
   val buttons: List<Pair<String, ButtonBuilder>>,
   val columnCount: Int = 1,
   val inplaceUpdate: Boolean = true
@@ -119,23 +121,23 @@ fun State.trigger(code: ObjectNode.()->Unit) {
 
 interface StateAction {
   val text: TextMessage
-  val buttonTransition: ButtonTransition
+  val buttonBlock: ButtonBlock
 }
 
 class ButtonsAction(
   override val text: TextMessage,
   val buttons: List<Pair<String, ButtonBuilder>>): StateAction {
 
-  override val buttonTransition: ButtonTransition
-    get() = ButtonTransition(buttons)
+  override val buttonBlock: ButtonBlock
+    get() = ButtonBlock(buttons)
 }
 
 class SimpleAction(
   text: String, returnState: String, input: InputEnvelope, code: (InputEnvelope)->Unit): StateAction {
   override val text = TextMessage(text)
 
-  override val buttonTransition = ButtonTransition(listOf(
-    returnState to ButtonBuilder({"<< Назад"})
+  override val buttonBlock = ButtonBlock(listOf(
+    returnState to ButtonBuilder(returnState,"<< Назад")
   ))
 
   init {
@@ -181,7 +183,7 @@ class BotStateMachine(internal val sessionProvider: UserSessionProvider) {
     LOG.debug("Entered state {}", state)
     val stateAction = actions[state.id] ?: return Err("No action is registered for state ${state.id}")
     return stateAction(input).map {
-      outputUi.showButtons(it.text, it.buttonTransition)
+      outputUi.showButtons(it.text, it.buttonBlock)
       state
     }.onFailure { it }
   }

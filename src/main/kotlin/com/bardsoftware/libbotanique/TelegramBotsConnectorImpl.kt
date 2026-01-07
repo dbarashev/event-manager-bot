@@ -28,7 +28,7 @@ class TelegramBotsMessageProcessor(private val stateMachine: BotStateMachine) {
                 val inplaceUpdate = transition.inplaceUpdate && update.callbackQuery?.message?.messageId != null
                 val buttons = transition.buttons.map { (stateId, buttonBuilder) ->
                     stateMachine.getState(stateId)?.let {state ->
-                        BtnData(buttonBuilder.label(inputEnvelope), callbackData = json(state.stateJson) {
+                        BtnData(buttonBuilder.label, callbackData = json(state.stateJson) {
                             put("_", buttonBuilder.output(inputEnvelope).contextJson)
                         })
                     } ?: throw RuntimeException("State with ID=${stateId} not found")

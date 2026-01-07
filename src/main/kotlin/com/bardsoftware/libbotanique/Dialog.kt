@@ -25,10 +25,13 @@ class Dialog(internal val initialState: State) {
     }
 
     fun apply(question: TextMessage, confirmation: TextMessage, successCode: (ObjectNode)->Unit) {
-        fields.add(DialogStep(fieldName = "confirm", contents = question, dataType =  DialogDataType.BOOLEAN, field = ConfirmationField("confirm"){
-            successCode(it)
-            userSession().reset(initialState.id)
-        }, invalidValueReply = "Изменения отменены"))
+        fields.add(DialogStep(fieldName = "confirm", contents = question, dataType =  DialogDataType.BOOLEAN,
+            field = ConfirmationField("confirm") {
+                successCode(it)
+                userSession().reset(initialState.id)
+            },
+            invalidValueReply = "Изменения отменены"
+        ))
         fields.add(DialogStep(fieldName = "exit", contents = confirmation, shortLabel = "< Выход", dataType = DialogDataType.CONFIRMATION,
             field = ExitField()))
     }
@@ -60,18 +63,18 @@ class Dialog(internal val initialState: State) {
         return when (nextStep.dataType) {
             DialogDataType.START -> {
                 ButtonsAction(nextStep.contents, listOf(
-                    initialState.id to button(nextStep.shortLabel) {
+                    initialState.id to button(initialState.id, nextStep.shortLabel) {
                         setNextField(nextStep.fieldName)
                     })
                 )
             }
             DialogDataType.BOOLEAN -> {
                 ButtonsAction(nextStep.contents, listOf(
-                    initialState.id to button("Yes") {
+                    initialState.id to button(initialState.id, "Yes") {
                         setNextField(nextStep.fieldName)
                         put("y", 1)
                     },
-                    initialState.id to button("No") {
+                    initialState.id to button(initialState.id, "No") {
                         setNextField(nextStep.fieldName)
                         put("y", 0)
                     }
@@ -143,8 +146,8 @@ class ExitField() : DialogField() {
     }
 }
 
-private fun Dialog.button(label: String, payloadBuilder: ObjectNode.()->Unit): ButtonBuilder =
-    ButtonBuilder({label}) {
+private fun Dialog.button(targetStateId: String, label: String, payloadBuilder: ObjectNode.()->Unit): ButtonBuilder =
+    ButtonBuilder(targetStateId, label) {
         OutputData(objectNode {
             setAll<ObjectNode>(this@button.initialState.stateJson)
             payloadBuilder(this)

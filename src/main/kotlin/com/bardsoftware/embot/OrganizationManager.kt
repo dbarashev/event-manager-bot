@@ -141,19 +141,19 @@ class OrgLandingAction(input: InputEnvelope): StateAction {
     Используйте кнопки внизу для управления событиями или изменения настроек\.
     """.trimIndent(), TextMarkup.MARKDOWN)
 
-  override val buttonTransition get() = ButtonTransition(listOf(
-    "ORG_EVENT_ADD" to ButtonBuilder({ "Создать событие..." }) {
+  override val buttonBlock get() = ButtonBlock(listOf(
+    "ORG_EVENT_ADD" to ButtonBuilder("ORG_EVENT_ADD","Создать событие..." ) {
       OutputData(objectNode { setOrganizationId(orgRecord.id!!) })
     }
   ) + getAllEvents(orgRecord.id!!).map {eventRecord ->
-    "ORG_EVENT_INFO" to ButtonBuilder({eventRecord.buttonLabel()}) {
+    "ORG_EVENT_INFO" to ButtonBuilder("ORG_EVENT_INFO",eventRecord.buttonLabel()) {
       OutputData(objectNode {
         setOrganizationId(orgRecord.id!!)
         setEventId(eventRecord.id!!)
       })
     }
   } + listOf(
-    "ORG_SETTINGS" to ButtonBuilder({"Настройки..."}) {
+    "ORG_SETTINGS" to ButtonBuilder("ORG_SETTINGS","Настройки...") {
       OutputData(objectNode {
         setSection(CbSection.DIALOG)
         setDialogId(OrgManagerCommand.ORG_SETTINGS.id)
@@ -161,7 +161,7 @@ class OrgLandingAction(input: InputEnvelope): StateAction {
       })
     }
   ) + listOf(
-    "START" to ButtonBuilder({"<< Назад"})
+    "START" to ButtonBuilder("START","<< Назад")
   ))
 }
 
@@ -195,21 +195,21 @@ class OrgEventInfoAction(private val input: InputEnvelope): StateAction {
       ), TextMarkup.MARKDOWN
     )
   }
-  override val buttonTransition: ButtonTransition
-    get() = ButtonTransition(listOf(
-      "ORG_EVENT_EDIT" to ButtonBuilder({"Редактировать событие..."},
+  override val buttonBlock: ButtonBlock
+    get() = ButtonBlock(listOf(
+      "ORG_EVENT_EDIT" to ButtonBuilder("ORG_EVENT_EDIT","Редактировать событие...",
         output = { OutputData(objectNode(baseOutputJson) {
           setSection(CbSection.DIALOG)
           setDialogId(OrgManagerCommand.EVENT_EDIT.id)
         }) }),
-      "ORG_EVENT_PARTICIPANT_LIST" to ButtonBuilder({"Участники >>"}, output = { OutputData(baseOutputJson) }),
+      "ORG_EVENT_PARTICIPANT_LIST" to ButtonBuilder("ORG_EVENT_PARTICIPANT_LIST","Участники >>", output = { OutputData(baseOutputJson) }),
       if (event.isArchived == true) {
-        EMBotState.ORG_EVENT_UNARCHIVE.code to ButtonBuilder({ "Опубликовать" }, output = { OutputData(baseOutputJson) })
+        EMBotState.ORG_EVENT_UNARCHIVE.code to ButtonBuilder(EMBotState.ORG_EVENT_UNARCHIVE.code,"Опубликовать", output = { OutputData(baseOutputJson) })
       } else {
-        "ORG_EVENT_ARCHIVE" to ButtonBuilder({ "Архивировать" }, output = { OutputData(baseOutputJson) })
+        "ORG_EVENT_ARCHIVE" to ButtonBuilder("ORG_EVENT_ARCHIVE","Архивировать", output = { OutputData(baseOutputJson) })
       },
-      "ORG_EVENT_DELETE"           to ButtonBuilder({"Удалить"},      output = { OutputData(baseOutputJson)}),
-      "ORG_LANDING"                to ButtonBuilder({"<< Назад"}, output = {OutputData(objectNode {
+      "ORG_EVENT_DELETE"           to ButtonBuilder("ORG_EVENT_DELETE","Удалить",      output = { OutputData(baseOutputJson)}),
+      "ORG_LANDING"                to ButtonBuilder("ORG_LANDING","<< Назад", output = {OutputData(objectNode {
         setOrganizationId(event.organizerId!!)
       })})
     ))
@@ -222,17 +222,17 @@ class OrgEventParticipantListAction(private val participants: List<Eventteamregi
   )
 
   override val text = TextMessage("Здесь вы можете добавить или удалить участников события")
-  override val buttonTransition = ButtonTransition(
+  override val buttonBlock = ButtonBlock(
     buttons = participants.map {participant ->
-      "ORG_EVENT_PARTICIPANT_INFO" to ButtonBuilder({participant.participantName!!}) {
+      "ORG_EVENT_PARTICIPANT_INFO" to ButtonBuilder("ORG_EVENT_PARTICIPANT_INFO",participant.participantName!!) {
         OutputData(objectNode {
           setAll<ObjectNode>(it.contextJson)
           setParticipantId(participant.participantId!!)
         })
       }
     } + listOf(
-      "ORG_EVENT_PARTICIPANT_ADD" to ButtonBuilder({"Добавить участника >>"}),
-      "ORG_EVENT_INFO" to ButtonBuilder({"<< Назад"})
+      "ORG_EVENT_PARTICIPANT_ADD" to ButtonBuilder("ORG_EVENT_PARTICIPANT_ADD","Добавить участника >>"),
+      "ORG_EVENT_INFO" to ButtonBuilder("ORG_EVENT_INFO","<< Назад")
     )
   )
 

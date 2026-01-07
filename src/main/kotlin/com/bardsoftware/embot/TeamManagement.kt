@@ -104,22 +104,22 @@ class TeamLandingAction(private val teamMemberList: List<ParticipantRecord>, pri
     """.trimMargin(), TextMarkup.MARKDOWN
   )
 
-  override val buttonTransition get() = ButtonTransition(
+  override val buttonBlock get() = ButtonBlock(
     teamMemberList.map {record ->
-      "TEAM_MEMBER_INFO" to ButtonBuilder({record.displayName!!}) {
+      "TEAM_MEMBER_INFO" to ButtonBuilder("TEAM_MEMBER_INFO",record.displayName!!) {
         OutputData(objectNode {
           setTeamMemberId(record.id!!)
           setTeamLeaderId(leaderId)
         })
       }
     } + listOf(
-    "TEAM_MEMBER_ADD" to ButtonBuilder({"Добавить участника..."}) {OutputData(
+    "TEAM_MEMBER_ADD" to ButtonBuilder("TEAM_MEMBER_ADD","Добавить участника...") {OutputData(
       objectNode {
         setSection(CbSection.DIALOG)
         setDialogId(CbTeamCommand.ADD_DIALOG.id)
       }
     )},
-    "PARTICIPANT_LANDING" to ButtonBuilder({"<< Назад"})
+    "PARTICIPANT_LANDING" to ButtonBuilder("PARTICIPANT_LANDING","<< Назад")
   ))
 }
 
@@ -136,20 +136,20 @@ class TeamMemberInfoAction(teamMember: ParticipantRecord, private val leaderId: 
     *Имя*\: ${teamMember.displayName!!.escapeMarkdown()}
     *Возраст*\: ${teamMember.age!!}
   """.trimIndent(), TextMarkup.MARKDOWN)
-  override val buttonTransition = ButtonTransition(
+  override val buttonBlock = ButtonBlock(
     buttons = listOf(
-      "TEAM_EDIT_DIALOG" to ButtonBuilder({"Редактировать..."}) {
+      "TEAM_EDIT_DIALOG" to ButtonBuilder("TEAM_EDIT_DIALOG","Редактировать...") {
         OutputData(objectNode {
           setSection(CbSection.DIALOG)
           setTeamMemberId(teamMember.id!!)
           setDialogId(CbTeamCommand.EDIT_DIALOG.id)
         })},
-      "TEAM_MEMBER_DELETE" to ButtonBuilder({"Удалить"}) {
+      "TEAM_MEMBER_DELETE" to ButtonBuilder("TEAM_MEMBER_DELETE","Удалить") {
         OutputData(objectNode {
           setTeamMemberId(teamMember.id!!)
           setTeamLeaderId(leaderId)
         })},
-      "TEAM_LANDING" to ButtonBuilder({"<< Назад"})
+      "TEAM_LANDING" to ButtonBuilder("TEAM_LANDING","<< Назад")
     )
   )
 }
