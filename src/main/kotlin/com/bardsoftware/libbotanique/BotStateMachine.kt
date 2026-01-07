@@ -82,17 +82,17 @@ class State(val id: String, internal val stateMachine: BotStateMachine) {
   }
 }
 
-class ButtonStateBuilder(var text: String = "", var markdown: String = "", var buttonList: List<Pair<String, ButtonBuilder>> = emptyList()) {
+class ButtonStateBuilder(var text: String = "", var markdown: String = "", var buttonList: List<Pair<String, OutputButton>> = emptyList()) {
   fun buttons(vararg buttons: Pair<String, String>) {
     buttonList = buttons.map { (label, outState) ->
-      outState to ButtonBuilder(outState, label = label)
+      outState to OutputButton(outState, label = label)
     }
   }
 }
 
 fun identityOutput(input: InputEnvelope) = OutputData(input.stateJson)
 
-data class ButtonBuilder(val targetState: String, val label: String, val output: (InputEnvelope)->OutputData = ::identityOutput)
+data class OutputButton(val targetState: String, val label: String, val payload: String? = null, val output: (InputEnvelope)->OutputData = ::identityOutput)
 
 
 /**
@@ -108,7 +108,7 @@ enum class TextMarkup {
 
 data class TextMessage(val text: String, val markup: TextMarkup = TextMarkup.PLAIN)
 class ButtonBlock(
-  val buttons: List<ButtonBuilder>,
+  val buttons: List<OutputButton>,
   val columnCount: Int = 1,
   val inplaceUpdate: Boolean = true
 )
@@ -126,7 +126,7 @@ interface StateAction {
 
 class ButtonsAction(
   override val text: TextMessage,
-  val buttons: List<Pair<String, ButtonBuilder>>): StateAction {
+  val buttons: List<Pair<String, OutputButton>>): StateAction {
 
   override val buttonBlock: ButtonBlock
     get() = ButtonBlock(buttons.map { it.second })
@@ -137,7 +137,7 @@ class SimpleAction(
   override val text = TextMessage(text)
 
   override val buttonBlock = ButtonBlock(listOf(
-    ButtonBuilder(returnState,"<< Назад")
+    OutputButton(returnState,"<< Назад")
   ))
 
   init {
@@ -190,7 +190,7 @@ class BotStateMachine(internal val sessionProvider: UserSessionProvider) {
 }
 
 
-fun objectNode(prototype: ObjectNode = jacksonObjectMapper().createObjectNode(),
-               builder: ObjectNode.() -> Unit) = prototype.deepCopy().apply(builder)
+fun objectNode(prototype: ObjectNode? = null,
+               builder: ObjectNode.() -> Unit) = (prototype ?: jacksonObjectMapper().createObjectNode()).deepCopy().apply(builder)
 
 private val LOG = LoggerFactory.getLogger("Bot.State")

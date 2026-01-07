@@ -106,20 +106,20 @@ class TeamLandingAction(private val teamMemberList: List<ParticipantRecord>, pri
 
   override val buttonBlock get() = ButtonBlock(
     teamMemberList.map {record ->
-      ButtonBuilder("TEAM_MEMBER_INFO",record.displayName!!) {
+      OutputButton("TEAM_MEMBER_INFO",record.displayName!!) {
         OutputData(objectNode {
           setTeamMemberId(record.id!!)
           setTeamLeaderId(leaderId)
         })
       }
     } + listOf(
-     ButtonBuilder("TEAM_MEMBER_ADD","Добавить участника...") {OutputData(
+     OutputButton("TEAM_MEMBER_ADD","Добавить участника...") {OutputData(
       objectNode {
         setSection(CbSection.DIALOG)
         setDialogId(CbTeamCommand.ADD_DIALOG.id)
       }
     )},
-      ButtonBuilder("PARTICIPANT_LANDING","<< Назад")
+      OutputButton("PARTICIPANT_LANDING","<< Назад")
   ))
 }
 
@@ -138,18 +138,18 @@ class TeamMemberInfoAction(teamMember: ParticipantRecord, private val leaderId: 
   """.trimIndent(), TextMarkup.MARKDOWN)
   override val buttonBlock = ButtonBlock(
     buttons = listOf(
-      ButtonBuilder("TEAM_EDIT_DIALOG","Редактировать...") {
+      OutputButton("TEAM_EDIT_DIALOG","Редактировать...") {
         OutputData(objectNode {
           setSection(CbSection.DIALOG)
           setTeamMemberId(teamMember.id!!)
           setDialogId(CbTeamCommand.EDIT_DIALOG.id)
         })},
-      ButtonBuilder("TEAM_MEMBER_DELETE","Удалить") {
+      OutputButton("TEAM_MEMBER_DELETE","Удалить") {
         OutputData(objectNode {
           setTeamMemberId(teamMember.id!!)
           setTeamLeaderId(leaderId)
         })},
-      ButtonBuilder("TEAM_LANDING","<< Назад")
+      OutputButton("TEAM_LANDING","<< Назад")
     )
   )
 }

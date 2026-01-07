@@ -16,13 +16,13 @@ class ParticipantEventsAction(private val participant: ParticipantRecord): State
   override val text get() = TextMessage("Ваши события:")
   override val buttonBlock get() = ButtonBlock(
     buttons = getAvailableEvents(participant).map { eventRecord ->
-      ButtonBuilder(EMBotState.PARTICIPANT_SHOW_EVENT.code,eventRecord.formatUncheckedLabel()) {
+      OutputButton(EMBotState.PARTICIPANT_SHOW_EVENT.code,eventRecord.formatUncheckedLabel()) {
         OutputData(objectNode {
           setEventId(eventRecord.id!!)
         }
       )}
     }.toList() + listOf(
-      ButtonBuilder("PARTICIPANT_LANDING","\ud83d\udd19 Назад")
+      OutputButton("PARTICIPANT_LANDING","\ud83d\udd19 Назад")
     )
   )
 }
@@ -51,13 +51,13 @@ class ParticipantShowEventAction(
 
   override val buttonBlock = ButtonBlock(
     buttons = listOf(
-      ButtonBuilder("PARTICIPANT_REGISTER","Регистрация \u23E9") {
+      OutputButton("PARTICIPANT_REGISTER","Регистрация \u23E9") {
         OutputData(objectNode { setEventId(event.id!!) })
       }) + if (registeredTeam.isEmpty()) emptyList() else listOf(
-      ButtonBuilder(EMBotState.PARTICIPANT_UNREGISTER.code,"Отменить регистрацию полностью") {
+      OutputButton(EMBotState.PARTICIPANT_UNREGISTER.code,"Отменить регистрацию полностью") {
         OutputData(objectNode { setEventId(event.id!!) })
       }) + listOf(
-      ButtonBuilder("PARTICIPANT_EVENTS","\ud83d\udd19 Назад")
+      OutputButton("PARTICIPANT_EVENTS","\ud83d\udd19 Назад")
       )
   )
 }
@@ -65,7 +65,7 @@ class ParticipantShowEventAction(
 class ParticipantUnregisterAction(inputEnvelope: InputEnvelope): StateAction {
   override val text = TextMessage("Регистрация отменена.")
   override val buttonBlock = ButtonBlock(buttons = listOf(
-    ButtonBuilder(EMBotState.PARTICIPANT_SHOW_EVENT.code,"\ud83d\udd19 Назад к событию")
+    OutputButton(EMBotState.PARTICIPANT_SHOW_EVENT.code,"\ud83d\udd19 Назад к событию")
   ))
 
   init {

@@ -64,19 +64,25 @@ class Dialog(internal val initialState: State) {
             DialogDataType.START -> {
                 ButtonsAction(nextStep.contents, listOf(
                     initialState.id to button(initialState.id, nextStep.shortLabel) {
-                        setNextField(nextStep.fieldName)
+                        setContext(objectNode {
+                            setNextField(nextStep.fieldName)
+                        })
                     })
                 )
             }
             DialogDataType.BOOLEAN -> {
                 ButtonsAction(nextStep.contents, listOf(
                     initialState.id to button(initialState.id, "Yes") {
-                        setNextField(nextStep.fieldName)
-                        put("y", 1)
+                        setContext(objectNode {
+                            setNextField(nextStep.fieldName)
+                            put("y", 1)
+                        })
                     },
                     initialState.id to button(initialState.id, "No") {
-                        setNextField(nextStep.fieldName)
-                        put("y", 0)
+                        setContext(objectNode {
+                            setNextField(nextStep.fieldName)
+                            put("y", 0)
+                        })
                     }
                 ))
             }
@@ -146,15 +152,17 @@ class ExitField() : DialogField() {
     }
 }
 
-private fun Dialog.button(targetStateId: String, label: String, payloadBuilder: ObjectNode.()->Unit): ButtonBuilder =
-    ButtonBuilder(targetStateId, label) {
-        OutputData(objectNode {
-            setAll<ObjectNode>(this@button.initialState.stateJson)
-            payloadBuilder(this)
-        })
-    }
+private fun Dialog.button(targetStateId: String, label: String, payloadBuilder: ObjectNode.()->Unit): OutputButton {
+    val targetState = initialState.stateMachine.getState(targetStateId)
+    val payload = objectNode(targetState?.stateJson) {
+        payloadBuilder(this)
+    }.toString()
+    return OutputButton(targetStateId, label = label, payload = payload)
+}
 fun ObjectNode.getCurrentField() = this[">"]?.asText()
 fun ObjectNode.setNextField(fieldId: String) = this.put(">", fieldId)
+fun ObjectNode.setContext(contextNode: ObjectNode) = this.put("_", contextNode)
+
 fun String.toBool() = Result.runCatching {
     this@toBool.trim().lowercase().let {
         if (setOf("1", "true", "y", "yes").contains(it)) {

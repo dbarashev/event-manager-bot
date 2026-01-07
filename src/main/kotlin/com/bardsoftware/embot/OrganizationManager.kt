@@ -142,18 +142,18 @@ class OrgLandingAction(input: InputEnvelope): StateAction {
     """.trimIndent(), TextMarkup.MARKDOWN)
 
   override val buttonBlock get() = ButtonBlock(listOf(
-    ButtonBuilder("ORG_EVENT_ADD","Создать событие..." ) {
+    OutputButton("ORG_EVENT_ADD","Создать событие..." ) {
       OutputData(objectNode { setOrganizationId(orgRecord.id!!) })
     }
   ) + getAllEvents(orgRecord.id!!).map {eventRecord ->
-    ButtonBuilder("ORG_EVENT_INFO",eventRecord.buttonLabel()) {
+    OutputButton("ORG_EVENT_INFO",eventRecord.buttonLabel()) {
       OutputData(objectNode {
         setOrganizationId(orgRecord.id!!)
         setEventId(eventRecord.id!!)
       })
     }
   } + listOf(
-    ButtonBuilder("ORG_SETTINGS","Настройки...") {
+    OutputButton("ORG_SETTINGS","Настройки...") {
       OutputData(objectNode {
         setSection(CbSection.DIALOG)
         setDialogId(OrgManagerCommand.ORG_SETTINGS.id)
@@ -161,7 +161,7 @@ class OrgLandingAction(input: InputEnvelope): StateAction {
       })
     }
   ) + listOf(
-    ButtonBuilder("START","<< Назад")
+    OutputButton("START","<< Назад")
   ))
 }
 
@@ -197,19 +197,19 @@ class OrgEventInfoAction(private val input: InputEnvelope): StateAction {
   }
   override val buttonBlock: ButtonBlock
     get() = ButtonBlock(listOf(
-      ButtonBuilder("ORG_EVENT_EDIT","Редактировать событие...",
+      OutputButton("ORG_EVENT_EDIT","Редактировать событие...",
         output = { OutputData(objectNode(baseOutputJson) {
           setSection(CbSection.DIALOG)
           setDialogId(OrgManagerCommand.EVENT_EDIT.id)
         }) }),
-      ButtonBuilder("ORG_EVENT_PARTICIPANT_LIST","Участники >>", output = { OutputData(baseOutputJson) }),
+      OutputButton("ORG_EVENT_PARTICIPANT_LIST","Участники >>", output = { OutputData(baseOutputJson) }),
       if (event.isArchived == true) {
-        ButtonBuilder(EMBotState.ORG_EVENT_UNARCHIVE.code,"Опубликовать", output = { OutputData(baseOutputJson) })
+        OutputButton(EMBotState.ORG_EVENT_UNARCHIVE.code,"Опубликовать", output = { OutputData(baseOutputJson) })
       } else {
-        ButtonBuilder("ORG_EVENT_ARCHIVE","Архивировать", output = { OutputData(baseOutputJson) })
+        OutputButton("ORG_EVENT_ARCHIVE","Архивировать", output = { OutputData(baseOutputJson) })
       },
-      ButtonBuilder("ORG_EVENT_DELETE","Удалить",      output = { OutputData(baseOutputJson)}),
-      ButtonBuilder("ORG_LANDING","<< Назад", output = {OutputData(objectNode {
+      OutputButton("ORG_EVENT_DELETE","Удалить",      output = { OutputData(baseOutputJson)}),
+      OutputButton("ORG_LANDING","<< Назад", output = {OutputData(objectNode {
         setOrganizationId(event.organizerId!!)
       })})
     ))
@@ -224,15 +224,15 @@ class OrgEventParticipantListAction(private val participants: List<Eventteamregi
   override val text = TextMessage("Здесь вы можете добавить или удалить участников события")
   override val buttonBlock = ButtonBlock(
     buttons = participants.map {participant ->
-      ButtonBuilder("ORG_EVENT_PARTICIPANT_INFO",participant.participantName!!) {
+      OutputButton("ORG_EVENT_PARTICIPANT_INFO",participant.participantName!!) {
         OutputData(objectNode {
           setAll<ObjectNode>(it.contextJson)
           setParticipantId(participant.participantId!!)
         })
       }
     } + listOf(
-      ButtonBuilder("ORG_EVENT_PARTICIPANT_ADD","Добавить участника >>"),
-      ButtonBuilder("ORG_EVENT_INFO","<< Назад")
+      OutputButton("ORG_EVENT_PARTICIPANT_ADD","Добавить участника >>"),
+      OutputButton("ORG_EVENT_INFO","<< Назад")
     )
   )
 

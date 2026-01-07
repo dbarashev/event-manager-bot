@@ -24,17 +24,30 @@ class TelegramBotsMessageProcessor(private val stateMachine: BotStateMachine) {
 
     private fun createOutputUi(update: Update, inputEnvelope: InputEnvelope, messageSender: MessageSender): OutputUi {
         return OutputUi(
-            showButtons = {text, transition ->
-                val inplaceUpdate = transition.inplaceUpdate && update.callbackQuery?.message?.messageId != null
-                val buttons = transition.buttons.map { buttonBuilder ->
-                    stateMachine.getState(buttonBuilder.targetState)?.let {state ->
-                        BtnData(buttonBuilder.label, callbackData = json(state.stateJson) {
-                            put("_", buttonBuilder.output(inputEnvelope).contextJson)
-                        })
-                    } ?: throw RuntimeException("State with ID=${buttonBuilder.targetState} not found")
-                }.toList()
+            showButtons = {text, buttonBlock ->
+                val inplaceUpdate = buttonBlock.inplaceUpdate && update.callbackQuery?.message?.messageId != null
                 val isMarkdown = text.markup == TextMarkup.MARKDOWN
                 val replyText = text.text.ifBlank { "ПУСТОЙ ОТВЕТ" }
+
+                val replyKeyboard =
+                    if (buttonBlock.buttons.isEmpty()) null
+                else
+                    InlineKeyboardMarkup(
+                            buttonBlock.buttons.map { botButton ->
+                                InlineKeyboardButton(botButton.label).also { btn ->
+                                    if (botButton.payload != null) {
+                                        btn.callbackData = botButton.payload
+                                        return@also
+                                    }
+                                    stateMachine.getState(botButton.targetState)?.let {state ->
+                                        btn.callbackData = json(state.stateJson) {
+                                            setContext(botButton.output(inputEnvelope).contextJson)
+                                        }
+                                    }
+                                }
+                            }.chunked(buttonBlock.columnCount)
+                        )
+
                 val reply =
                     if (inplaceUpdate) {
                         EditMessageText().apply {
@@ -42,30 +55,14 @@ class TelegramBotsMessageProcessor(private val stateMachine: BotStateMachine) {
                             chatId = update.getReplyChatId().toString()
                             if (isMarkdown) parseMode = ParseMode.MARKDOWNV2
                             this.text = replyText
-                            if (buttons.isNotEmpty()) {
-                                replyMarkup = InlineKeyboardMarkup(
-                                    buttons.map {
-                                        InlineKeyboardButton(it.label).also { btn ->
-                                            if (it.callbackData.isNotBlank()) btn.callbackData = it.callbackData
-                                        }
-                                    }.chunked(transition.columnCount)
-                                )
-                            }
+                            if (replyKeyboard != null) replyMarkup = replyKeyboard
                         }
                     } else {
                         SendMessage().apply {
                             chatId = update.getReplyChatId().toString()
                             enableMarkdownV2(isMarkdown)
                             this.text = replyText
-                            if (buttons.isNotEmpty()) {
-                                replyMarkup = InlineKeyboardMarkup(
-                                    buttons.map {
-                                        InlineKeyboardButton(it.label).also { btn ->
-                                            if (it.callbackData.isNotBlank()) btn.callbackData = it.callbackData
-                                        }
-                                    }.chunked(transition.columnCount)
-                                )
-                            }
+                            if (replyKeyboard != null) replyMarkup = replyKeyboard
                         }
                     }
                 messageSender.send(reply as BotApiMethod<Serializable>)
