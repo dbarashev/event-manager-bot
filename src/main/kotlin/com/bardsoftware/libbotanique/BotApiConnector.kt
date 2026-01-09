@@ -21,12 +21,13 @@ import org.telegram.telegrambots.meta.api.objects.Update
 import java.io.Serializable
 import java.net.URI
 
-typealias MessageProcessor = (update: Update, sender: MessageSender) -> Unit
+typealias MessageProcessor = (update: Update) -> Unit
 
 class LongPollingConnector(
-    private val processor: MessageProcessor,
-    testReplyChatId: String?,
-    private val testBecome: String?) :
+  private val processor: MessageProcessorFactory,
+  testReplyChatId: String?,
+  private val testBecome: String?
+) :
   TelegramLongPollingBot(createBotOptions(), System.getenv("TG_BOT_TOKEN") ?: ""),
   MessageSender {
 
@@ -79,7 +80,7 @@ class LongPollingConnector(
       }
     }
     try {
-      processor(update, getMessageSender())
+      processor(getMessageSender()).invoke(update)
     } catch (ex: Exception) {
       LOG.error("Failed to process the update", ex)
       LOG.debug("Update data: {}", update)
@@ -89,7 +90,7 @@ class LongPollingConnector(
     }
   }
 
-  fun download(document: Document): Result<ByteArray, String> {
+  override fun download(document: Document): Result<ByteArray, String> {
     GetFile().apply {
       fileId = document.docId
       return execute(this)?.let {file ->
@@ -100,7 +101,7 @@ class LongPollingConnector(
   }
 }
 
-class WebHookConnector(private val processor: MessageProcessor) :
+class WebHookConnector(private val processor: MessageProcessorFactory) :
   TelegramWebhookBot(System.getenv("TG_BOT_TOKEN") ?: ""),
   MessageSender {
   override fun getBotUsername() = System.getenv("TG_BOT_USERNAME") ?: ""
@@ -114,7 +115,7 @@ class WebHookConnector(private val processor: MessageProcessor) :
   override fun onWebhookUpdateReceived(update: Update): BotApiMethod<*>? {
     return try {
       LOGGER.info("Received update: $update")
-      processor(update, this)
+      processor(getMessageSender()).invoke(update)
       null
     } catch (ex: Exception) {
       LOGGER.error("Failed to process update", ex)
@@ -144,6 +145,16 @@ class WebHookConnector(private val processor: MessageProcessor) :
       it.fromChatId = msg.chatId.toString()
       it.messageId = msg.messageId
     })
+  }
+
+  override fun download(document: Document): Result<ByteArray, String> {
+    GetFile().apply {
+      fileId = document.docId
+      return execute(this)?.let {file ->
+        val downloadUrl = "https://api.telegram.org/file/bot${this@WebHookConnector.botToken}/${file.filePath}"
+        runCatching { URI(downloadUrl).toURL().readBytes() }.mapError { it.message ?: "Unknown error" }
+      } ?: Err("Failed to download the file")
+    }
   }
 }
 

@@ -37,6 +37,10 @@ dependencies {
     implementation("com.google.api-client:google-api-client:1.35.2")
     implementation("com.google.apis:google-api-services-sheets:v4-rev612-1.25.0")
     implementation("com.google.api-client:google-api-client-jackson2:1.35.2")
+    // JSON factory for Google HTTP client (used by YouTube Data API client)
+    implementation("com.google.http-client:google-http-client-gson:1.42.3")
+    // YouTube Data API v3 official client
+    implementation("com.google.apis:google-api-services-youtube:v3-rev20251217-2.0.0")
 
     testImplementation(kotlin("test"))
 }

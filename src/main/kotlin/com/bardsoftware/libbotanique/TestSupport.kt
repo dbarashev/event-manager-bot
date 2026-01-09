@@ -1,5 +1,6 @@
 package com.bardsoftware.libbotanique
 
+import com.github.michaelbull.result.Result
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
@@ -26,6 +27,10 @@ class TestMessageSender(private val destChatId: String,
 
   override fun sendDoc(doc: SendDocument) {
     delegate.sendDoc(doc)
+  }
+
+  override fun download(doc: Document): Result<ByteArray, String> {
+    return delegate.download(doc)
   }
 
 }

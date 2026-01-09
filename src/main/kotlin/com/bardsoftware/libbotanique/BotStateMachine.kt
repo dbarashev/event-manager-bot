@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.michaelbull.result.*
 import org.slf4j.LoggerFactory
+import kotlin.collections.map
+import kotlin.collections.toMutableSet
 
 
 class State(val id: String, internal val stateMachine: BotStateMachine) {
@@ -15,7 +17,7 @@ class State(val id: String, internal val stateMachine: BotStateMachine) {
 
   var isSubset: Boolean = false
   var isIgnored: Boolean = false
-  var command: String? = null
+  var commands = emptySet<String>()
 
   fun required(key: String, value: String) {
     requiredNode.put(key, value)
@@ -33,33 +35,36 @@ class State(val id: String, internal val stateMachine: BotStateMachine) {
     requiredPredicates[key] = predicate
   }
 
-  fun matches(input: InputEnvelope): Boolean {
-    if (isIgnored) return false
-    this.command?.let {
-      if (it == input.command) {
-        return true
+  private val matchers = mutableListOf<(InputEnvelope)->Boolean>().also {
+    it.add { input ->
+      val requiredSet = requiredNode.fields().asSequence().toSet()
+      val nodeSet = input.stateJson.fields().asSequence().toSet()
+      if (!nodeSet.containsAll(requiredSet)) {
+        return@add false
+      }
+      if (isSubset) {
+        return@add true
+      }
+      return@add nodeSet.map { it.key }.toMutableSet().let {
+        it.removeAll(requiredSet.map { it.key })
+        it.isEmpty()
       }
     }
-    val requiredSet = requiredNode.fields().asSequence().toSet()
-    val nodeSet = input.stateJson.fields().asSequence().toSet()
-    if (!nodeSet.containsAll(requiredSet)) {
-      return false
-    }
-    if (requiredPredicates.any { !it.value(input.stateJson.get(it.key)) }) {
-      return false
-    }
-    if (isSubset) {
-      return true
-    }
-    return nodeSet.map { it.key }.toMutableSet().let {
-      it.removeAll(requiredSet.map { it.key })
-      it.removeAll(requiredPredicates.keys)
-      it.isEmpty()
-    }
+  }
+
+  fun matches(input: InputEnvelope): Boolean {
+    return matchers.any { it(input) }
   }
 
   fun action(code: (InputEnvelope) -> StateAction) {
     stateMachine.action(id) { runCatching { code(it) }.mapError { it.message!! }}
+  }
+
+  fun command(vararg commands: String) {
+    this.commands = commands.toSet()
+    this.matchers.add {
+      it.contents is InputCommand && it.command in commands
+    }
   }
 
   fun menu(code: (ButtonStateBuilder).(InputEnvelope) -> Unit) {
@@ -75,6 +80,14 @@ class State(val id: String, internal val stateMachine: BotStateMachine) {
       LOG.error("Failre when building a menu", it)
       it.message!!
     }}
+  }
+
+  fun dialog(dialogBuilder: Dialog.()->Unit) {
+    val dlg = Dialog(this).apply(dialogBuilder)
+    matchers.add {
+      dlg.matches(it)
+    }
+    action(dlg::process)
   }
 
   override fun toString(): String {
@@ -145,7 +158,7 @@ class SimpleAction(
   }
 }
 
-class BotStateMachine(internal val sessionProvider: UserSessionProvider) {
+class BotStateMachine(val sessionProvider: UserSessionProvider) {
   private val states = mutableMapOf<String, State>()
   //private val transitions = mutableMapOf<String, (InputData)->Result<ButtonTransition, String>>()
   private val actions = mutableMapOf<String, (InputEnvelope)->Result<StateAction, String>>()
@@ -179,7 +192,20 @@ class BotStateMachine(internal val sessionProvider: UserSessionProvider) {
   }
 
   fun handle(input: InputEnvelope, outputUi: OutputUi): Result<State, String> {
-    val state = states.entries.firstOrNull { it.value.matches(input) }?.value ?: return Err("The input doesn't match any state")
+    var state = states.entries.firstOrNull { it.value.matches(input) }?.value ?: return Err("The input doesn't match any state")
+    if (input.contents !is InputTransition) {
+      val stateContext = sessionProvider(input.user.id.toLong()).load(state.id)?.asJson() ?: jacksonObjectMapper().createObjectNode()
+      state = stateContext.getRedirectStateId()?.let { states[it] } ?: state
+    }
+
+    return handle(state, input, outputUi)
+  }
+
+  fun handle(state: State, input: InputEnvelope, outputUi: OutputUi): Result<State, String> {
+    val landingContext = sessionProvider(input.user.id.toLong()).load(landingStateId)?.asJson() ?: jacksonObjectMapper().createObjectNode()
+    landingContext.setRedirectStateId(state.id)
+    sessionProvider(input.user.id.toLong()).save(landingStateId, landingContext.toString())
+
     LOG.debug("Entered state {}", state)
     val stateAction = actions[state.id] ?: return Err("No action is registered for state ${state.id}")
     return stateAction(input).map {
@@ -189,6 +215,8 @@ class BotStateMachine(internal val sessionProvider: UserSessionProvider) {
   }
 }
 
+fun ObjectNode.getRedirectStateId() = this.get("=>")?.asText()
+fun ObjectNode.setRedirectStateId(stateId: String) = this.put("=>", stateId)
 
 fun objectNode(prototype: ObjectNode? = null,
                builder: ObjectNode.() -> Unit) = (prototype ?: jacksonObjectMapper().createObjectNode()).deepCopy().apply(builder)

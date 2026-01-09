@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.github.michaelbull.result.Err
+import com.github.michaelbull.result.Result
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod
 import org.telegram.telegrambots.meta.api.methods.ParseMode
@@ -45,6 +46,7 @@ interface MessageSender {
   fun send(msg: SendMessage)
   fun forward(msg: Message, toChat: String)
   fun sendDoc(doc: SendDocument)
+  fun download(doc: Document): Result<ByteArray, String>
 }
 
 private var ourSender: MessageSender = object : MessageSender {
@@ -61,6 +63,10 @@ private var ourSender: MessageSender = object : MessageSender {
   }
 
   override fun forward(msg: Message, toChat: String) {
+    TODO("Not yet implemented")
+  }
+
+  override fun download(doc: Document): Result<ByteArray, String> {
     TODO("Not yet implemented")
   }
 }

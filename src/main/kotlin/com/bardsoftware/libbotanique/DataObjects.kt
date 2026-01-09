@@ -23,8 +23,20 @@ data class Document(val docId: String, val caption: String = "", val download: (
  */
 sealed class InputContents
 class InputVoid: InputContents()
+
+/** This is a /command typed by the user*/
 data class InputCommand(val command: String) : InputContents()
+
+/** This is a text typed by the user */
+data class InputText(val text: String) : InputContents()
+
+/** This is a list of photos uploaded by the user */
 data class InputPhotoList(val docs: List<Document>) : InputContents()
-data class InputState(val state: ObjectNode) : InputContents()
+
+/** This is a video uploaded by the user */
+data class InputVideo(val doc: Document) : InputContents()
+
+/** This is a transition from one state to another passed from the callback buttons */
+data class InputTransition(val state: ObjectNode) : InputContents()
 
 data class OutputData(val contextJson: ObjectNode)

@@ -11,10 +11,17 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton
 import java.io.Serializable
 
-class TelegramBotsMessageProcessor(private val stateMachine: BotStateMachine) {
-    fun processMessage(update: Update, messageSender: MessageSender) {
-        createPhotoInputEnvelope(update)
+typealias MessageProcessorFactory = (MessageSender) -> MessageProcessor
+
+fun createMessageProcessorFactory(stateMachine: BotStateMachine): MessageProcessorFactory {
+    return { messageSender -> TelegramBotsMessageProcessor(stateMachine, messageSender)::processMessage }
+}
+class TelegramBotsMessageProcessor(private val stateMachine: BotStateMachine, private val messageSender: MessageSender) {
+    fun processMessage(update: Update) {
+        createVideoInputEnvelope(update)
+            .orElse { createPhotoInputEnvelope(update) }
             .orElse { createCommandInputEnvelope(update) }
+            .orElse { createTextInputEnvelope(update) }
             .orElse { createCallbackInputEnvelope(update) }
             .orElse { Ok(InputEnvelope(objectNode {}, objectNode {}, update.getTgUser(), contents = InputVoid())) }
             .onSuccess {
@@ -71,12 +78,29 @@ class TelegramBotsMessageProcessor(private val stateMachine: BotStateMachine) {
 
     }
 
+    private fun createVideoInputEnvelope(update: Update): Result<InputEnvelope, String> {
+        val result: Result<InputEnvelope?, Throwable> = runCatching {
+            val envelope: InputEnvelope? = update.message?.video?.let { vid ->
+                val videoDoc = Document(vid.fileId, update.message.caption ?: "", messageSender::download)
+                println("Video content=$videoDoc")
+                InputEnvelope(
+                    objectNode { },
+                    objectNode { },
+                    update.getTgUser(),
+                    contents = InputVideo(videoDoc)
+                )
+            }
+            envelope
+        }
+        return result.mapError { it.message ?: "" }.flatMap { if (it != null) Ok(it) else Err("No video attached") }
+    }
+
     private fun createPhotoInputEnvelope(update: Update): Result<InputEnvelope, String> {
         val result: Result<InputEnvelope?, Throwable> = runCatching {
             val envelope: InputEnvelope? = update.message?.photo?.let {
                 if (it.isNotEmpty()) {
                     val photoContents = it.map {
-                        Document(it.fileId, update.message.caption ?: "", { Err("Not implemented") })
+                        Document(it.fileId, update.message.caption ?: "", messageSender::download)
                     }
                     println("Photo contents=$photoContents")
                     InputEnvelope(
@@ -95,15 +119,24 @@ class TelegramBotsMessageProcessor(private val stateMachine: BotStateMachine) {
     private fun createCommandInputEnvelope(update: Update): Result<InputEnvelope, String> =
         update.message?.text?.let {
             if (it.startsWith("/")) {
-                Ok(InputEnvelope(objectNode {}, objectNode {}, update.getTgUser(), command = it.removePrefix("/")))
+                val command = it.removePrefix("/")
+                Ok(InputEnvelope(objectNode {}, objectNode {}, update.getTgUser(), command = command, contents = InputCommand(command)))
+            } else null
+        } ?: return Err("No text message")
+
+    private fun createTextInputEnvelope(update: Update): Result<InputEnvelope, String> =
+        update.message?.text?.let {
+            if (!it.startsWith("/")) {
+                Ok(InputEnvelope(objectNode {}, objectNode {}, update.getTgUser(), contents = InputText(it)))
             } else null
         } ?: return Err("No text message")
 
     private fun createCallbackInputEnvelope(update: Update): Result<InputEnvelope, String> =
         update.getCallbackJson()?.let {
             val context = it.remove("_") as? ObjectNode ?: objectNode {}
-            Ok(InputEnvelope(it, context, update.getTgUser(), contents = InputState(it)))
+            Ok(InputEnvelope(it, context, update.getTgUser(), contents = InputTransition(it)))
         } ?: return Err("No callback data")
+
 }
 
 private fun Update.getMessageId() = callbackQuery?.message?.messageId ?: message?.messageId ?: -1

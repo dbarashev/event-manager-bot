@@ -22,13 +22,13 @@ import java.io.Serializable
 fun main(args: Array<String>) {
   if (args.isNotEmpty() && args[0] == "poll") {
     TelegramBotsApi(DefaultBotSession::class.java).apply {
-      registerBot(LongPollingConnector(::processMessage, testReplyChatId = null, testBecome = null).also(::addMenuCommands))
+      registerBot(LongPollingConnector(createMessageProcessorFactory(), testReplyChatId = null, testBecome = null).also(::addMenuCommands))
     }
   } else {
     TelegramBotsApi(DefaultBotSession::class.java, DefaultWebhook().also {
       it.setInternalUrl("http://0.0.0.0:8080")
     }).apply {
-      registerBot(WebHookConnector(::processMessage).also(::addMenuCommands), SetWebhook(System.getenv("TG_BOT_URL")))
+      registerBot(WebHookConnector(createMessageProcessorFactory()).also(::addMenuCommands), SetWebhook(System.getenv("TG_BOT_URL")))
     }
   }
 
@@ -89,7 +89,7 @@ fun buildStateMachine(sessionProvider: UserSessionProvider): BotStateMachine = B
       setSection(CbSection.MANAGER)
       setCommand(OrgManagerCommand.LANDING)
     }
-    command = "org"
+    command("org")
     action(::OrgLandingAction)
   }
 
@@ -218,7 +218,7 @@ fun buildStateMachine(sessionProvider: UserSessionProvider): BotStateMachine = B
       setSection(CbSection.TEAM)
       setCommand(CbTeamCommand.LANDING)
     }
-    command = "team"
+    command("team")
     action(::TeamLandingAction)
   }
   state("TEAM_MEMBER_ADD") {
@@ -260,7 +260,7 @@ fun buildStateMachine(sessionProvider: UserSessionProvider): BotStateMachine = B
       setSection(CbSection.EVENTS)
       setCommand(CbEventCommand.LANDING)
     }
-    command = "events"
+    command("events")
     action(::ParticipantEventsAction)
   }
   state(EMBotState.PARTICIPANT_SHOW_EVENT) {
@@ -281,6 +281,13 @@ fun buildStateMachine(sessionProvider: UserSessionProvider): BotStateMachine = B
 
 }
 
+fun createMessageProcessorFactory(): MessageProcessorFactory {
+  return { sender ->
+    { update ->
+      processMessage(update, sender)
+    }
+  }
+}
 
 fun processMessage(update: Update, sender: MessageSender) {
   LOG_INPUT.debug("Received update {}", update.message?.messageId ?: update.callbackQuery?.let {"callback ${it.data}"})

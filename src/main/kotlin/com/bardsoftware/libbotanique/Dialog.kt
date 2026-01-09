@@ -6,12 +6,9 @@ import com.github.michaelbull.result.Ok
 import com.github.michaelbull.result.Result
 import com.github.michaelbull.result.getOrElse
 import com.github.michaelbull.result.runCatching
+import com.github.michaelbull.result.onFailure
+import com.github.michaelbull.result.onSuccess
 import java.math.BigDecimal
-
-fun State.dialog(dialogBuilder: Dialog.()->Unit) {
-    val dlg = Dialog(this).apply(dialogBuilder)
-    action(dlg::process)
-}
 
 class Dialog(internal val initialState: State) {
     private val fields = mutableListOf<DialogStep>()
@@ -20,8 +17,39 @@ class Dialog(internal val initialState: State) {
         userSession().load(initialState.id)?.asJson() ?: jacksonObjectMapper().createObjectNode()
     }
     private var userSession: ()->UserSessionStorage = { error("No user session provider") }
+
+    fun matches(it: InputEnvelope): Boolean {
+        return dialogData.has("idxField")
+    }
+
     fun intro(intro: TextMessage, buttonLabel: String = "Начать") {
         fields.add(DialogStep(fieldName = "start", contents = intro, shortLabel = buttonLabel, dataType = DialogDataType.START))
+    }
+
+    // DSL: add a video step to the dialog
+    fun video(fieldName: String, prompt: TextMessage, invalidValueReply: String = "Пришлите видео", onVideo: (ByteArray) -> Unit) {
+        fields.add(
+            DialogStep(
+                fieldName = fieldName,
+                contents = prompt,
+                dataType = DialogDataType.VIDEO,
+                invalidValueReply = invalidValueReply,
+                field = VideoField(onVideo)
+            )
+        )
+    }
+
+    // DSL: add a text step to the dialog
+    fun text(fieldName: String, prompt: TextMessage, invalidValueReply: String = "Пришлите текст") {
+        fields.add(
+            DialogStep(
+                fieldName = fieldName,
+                contents = prompt,
+                dataType = DialogDataType.TEXT,
+                invalidValueReply = invalidValueReply,
+                field = TextField(fieldName)
+            )
+        )
     }
 
     fun apply(question: TextMessage, confirmation: TextMessage, successCode: (ObjectNode)->Unit) {
@@ -40,11 +68,14 @@ class Dialog(internal val initialState: State) {
         if (fields.isEmpty()) return SimpleAction("ПУСТОЙ ДИАЛОГ", initialState.stateMachine.landingStateId, inputEnvelope) {}
 
         userSession = { initialState.stateMachine.sessionProvider(inputEnvelope.user.id.toLong()) }
-        idxCurrentField = fields.indexOfFirst { it.fieldName == inputEnvelope.contextJson.getCurrentField() }
+        val currentFieldFromContext = inputEnvelope.contextJson.getCurrentField()
+        val currentFieldFromSession = dialogData.getCurrentField()
+        idxCurrentField = fields.indexOfFirst { it.fieldName == (currentFieldFromContext ?: currentFieldFromSession) }
         return process(idxCurrentField, inputEnvelope)
     }
 
     private fun process(idxCurrentField: Int, inputEnvelope: InputEnvelope): StateAction {
+        // We process the user input using our current dialog field.
         if (idxCurrentField >= 0) {
             val step = fields[idxCurrentField]
             val isValueValid = step.field.validate(inputEnvelope)
@@ -59,6 +90,7 @@ class Dialog(internal val initialState: State) {
             saveDialogData()
         }
 
+        // If the 
         val nextStep = fields[idxCurrentField + 1]
         return when (nextStep.dataType) {
             DialogDataType.START -> {
@@ -69,6 +101,18 @@ class Dialog(internal val initialState: State) {
                         })
                     })
                 )
+            }
+            DialogDataType.VIDEO -> {
+                // Remember that we expect a video for this step
+                dialogData.setNextField(nextStep.fieldName)
+                saveDialogData()
+                SimpleAction(nextStep.contents.text, initialState.stateMachine.landingStateId, inputEnvelope) {}
+            }
+            DialogDataType.TEXT -> {
+                // Remember that we expect a text for this step
+                dialogData.setNextField(nextStep.fieldName)
+                saveDialogData()
+                SimpleAction(nextStep.contents.text, initialState.stateMachine.landingStateId, inputEnvelope) {}
             }
             DialogDataType.BOOLEAN -> {
                 ButtonsAction(nextStep.contents, listOf(
@@ -96,13 +140,13 @@ class Dialog(internal val initialState: State) {
     }
 
     private fun saveDialogData() {
+        dialogData.put("idxField", idxCurrentField)
         userSession().save(this.initialState.id, dialogData.toString())
     }
-
 }
 
 enum class DialogDataType {
-    START, TEXT, INT, NUMBER, DATE, LOCATION, BOOLEAN, CONFIRMATION
+    START, TEXT, INT, NUMBER, DATE, LOCATION, BOOLEAN, CONFIRMATION, VIDEO
 }
 
 data class LatLon(val lat: BigDecimal, val lon: BigDecimal) {
@@ -149,6 +193,36 @@ class ExitField() : DialogField() {
 
     override fun validate(inputEnvelope: InputEnvelope): Boolean {
         return inputEnvelope.contextJson.get("confirm").asText().toBool().getOrElse { false }
+    }
+}
+
+class VideoField(private val onVideo: (ByteArray) -> Unit) : DialogField() {
+    override fun validate(inputEnvelope: InputEnvelope): Boolean {
+        return inputEnvelope.contents is InputVideo
+    }
+
+    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode) {
+        val video = envelope.contents as? InputVideo ?: return
+        getMessageSender().download(video.doc)
+            .onSuccess { bytes ->
+                onVideo(bytes)
+                // mark as processed; store optional marker
+                dialogData.put("video_${video.doc.docId}", true)
+            }
+            .onFailure {
+                // keep dialog as-is; validation already passed, but we won't crash
+            }
+    }
+}
+
+class TextField(private val fieldName: String) : DialogField() {
+    override fun validate(inputEnvelope: InputEnvelope): Boolean {
+        return inputEnvelope.contents is InputText
+    }
+
+    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode) {
+        val text = (envelope.contents as? InputText)?.text ?: return
+        dialogData.put(fieldName, text)
     }
 }
 
