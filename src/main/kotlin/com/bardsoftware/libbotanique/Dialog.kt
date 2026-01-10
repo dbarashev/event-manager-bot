@@ -1,32 +1,50 @@
 package com.bardsoftware.libbotanique
 
 import com.fasterxml.jackson.databind.node.ObjectNode
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.github.michaelbull.result.Ok
-import com.github.michaelbull.result.Result
-import com.github.michaelbull.result.getOrElse
-import com.github.michaelbull.result.runCatching
-import com.github.michaelbull.result.onFailure
-import com.github.michaelbull.result.onSuccess
+import com.github.michaelbull.result.*
 import java.math.BigDecimal
 
+/**
+ * Represents a dialog with multiple steps for user interaction.
+ * A dialog attaches to a state and manages user interactions through a series of steps. It saves the current dialog
+ * state in the user session on the server side. A dialog state is a current field and the values entered in all previous fields.
+ *
+ * A dialog is created by calling the DSL methods. The DSL provides a fluent interface for defining dialog steps and
+ * their behavior. Each step can have a label, a message, a data type, and a validation function.
+ *
+ * At the end, apply step should be called to define the final step of the dialog. It defines the confirmation message and
+ * the success code that will be executed after the user confirms the dialog.
+ */
 class Dialog(internal val initialState: State) {
     private val fields = mutableListOf<DialogStep>()
     private var idxCurrentField = 0
     private val dialogData: ObjectNode by lazy {
-        userSession().load(initialState.id)?.asJson() ?: jacksonObjectMapper().createObjectNode()
+        userSession().getDialogData(initialState.id)
     }
+    private fun saveDialogData() {
+        dialogData.put("idxField", idxCurrentField)
+        userSession().saveDialogData(this.initialState.id, dialogData)
+    }
+
     private var userSession: ()->UserSessionStorage = { error("No user session provider") }
+    private var exitStateId = initialState.stateMachine.landingStateId
 
     fun matches(it: InputEnvelope): Boolean {
         return dialogData.has("idxField")
+    }
+
+    fun cancel(exitStateId: String) {
+        this.exitStateId = exitStateId
     }
 
     fun intro(intro: TextMessage, buttonLabel: String = "Начать") {
         fields.add(DialogStep(fieldName = "start", contents = intro, shortLabel = buttonLabel, dataType = DialogDataType.START))
     }
 
-    // DSL: add a video step to the dialog
+    /**
+     * Adds a video field. The dialog will be waiting for a video file and will call the supplied `onVideo` callback once it is
+     * received.
+     */
     fun video(fieldName: String, prompt: TextMessage, invalidValueReply: String = "Пришлите видео", onVideo: (ByteArray) -> Unit) {
         fields.add(
             DialogStep(
@@ -53,7 +71,7 @@ class Dialog(internal val initialState: State) {
     }
 
     fun apply(question: TextMessage, confirmation: TextMessage, successCode: (ObjectNode)->Unit) {
-        fields.add(DialogStep(fieldName = "confirm", contents = question, dataType =  DialogDataType.BOOLEAN,
+        fields.add(DialogStep(fieldName = "confirm", contents = question, dataType = DialogDataType.BOOLEAN,
             field = ConfirmationField("confirm") {
                 successCode(it)
                 userSession().reset(initialState.id)
@@ -76,7 +94,7 @@ class Dialog(internal val initialState: State) {
 
     private fun process(idxCurrentField: Int, inputEnvelope: InputEnvelope): StateAction {
         // We process the user input using our current dialog field.
-        if (idxCurrentField >= 0) {
+        val inputState = if (idxCurrentField >= 0) {
             val step = fields[idxCurrentField]
             val isValueValid = step.field.validate(inputEnvelope)
             if (!isValueValid) {
@@ -87,6 +105,20 @@ class Dialog(internal val initialState: State) {
                 ) {}
             }
             step.field.processInput(inputEnvelope, dialogData)
+        } else DialogInputState.WAITING
+
+        if (inputState == DialogInputState.CANCEL) {
+            userSession().reset(initialState.id)
+            return SimpleAction(
+                "Диалог отменен",
+                exitStateId,
+                inputEnvelope
+            ) {
+                dialogData.removeAll()
+                it.contextJson.removeAll()
+            }
+        }
+        if (inputState == DialogInputState.VALID) {
             saveDialogData()
         }
 
@@ -117,16 +149,12 @@ class Dialog(internal val initialState: State) {
             DialogDataType.BOOLEAN -> {
                 ButtonsAction(nextStep.contents, listOf(
                     initialState.id to button(initialState.id, "Yes") {
-                        setContext(objectNode {
                             setNextField(nextStep.fieldName)
                             put("y", 1)
-                        })
                     },
                     initialState.id to button(initialState.id, "No") {
-                        setContext(objectNode {
                             setNextField(nextStep.fieldName)
                             put("y", 0)
-                        })
                     }
                 ))
             }
@@ -137,11 +165,6 @@ class Dialog(internal val initialState: State) {
                 SimpleAction("FIELD ${nextStep.fieldName} NOT IMPLEMENTED", initialState.stateMachine.landingStateId, inputEnvelope) {}
             }
         }
-    }
-
-    private fun saveDialogData() {
-        dialogData.put("idxField", idxCurrentField)
-        userSession().save(this.initialState.id, dialogData.toString())
     }
 }
 
@@ -155,6 +178,9 @@ data class LatLon(val lat: BigDecimal, val lon: BigDecimal) {
     fun asGoogleLink() = "https://www.google.com/maps/search/?api=1&query=$lat%2C$lon"
 }
 
+enum class DialogInputState {
+    WAITING, VALID, INVALID, CANCEL
+}
 data class DialogStep(
     val fieldName: String,
     val question: String = "",
@@ -167,12 +193,12 @@ data class DialogStep(
 )
 
 sealed class DialogField {
-    abstract fun processInput(envelope: InputEnvelope, dialogData: ObjectNode)
+    abstract fun processInput(envelope: InputEnvelope, dialogData: ObjectNode): DialogInputState
     open fun validate(inputEnvelope: InputEnvelope) = true
 }
 
 class VoidField : DialogField() {
-    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode) {}
+    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode): DialogInputState = DialogInputState.VALID
 }
 
 class ConfirmationField(private val fieldName: String, private val onSuccess: (ObjectNode) -> Unit) : DialogField() {
@@ -182,14 +208,17 @@ class ConfirmationField(private val fieldName: String, private val onSuccess: (O
         }
     }
 
-    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode) {
+    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode): DialogInputState {
+        if (envelope.contextJson.get("y").asText().toBool().getOrElse { false } != true) {
+            return DialogInputState.CANCEL
+        }
         onSuccess(dialogData)
+        return DialogInputState.VALID
     }
 }
 
 class ExitField() : DialogField() {
-    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode) {
-    }
+    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode): DialogInputState  = DialogInputState.VALID
 
     override fun validate(inputEnvelope: InputEnvelope): Boolean {
         return inputEnvelope.contextJson.get("confirm").asText().toBool().getOrElse { false }
@@ -201,17 +230,18 @@ class VideoField(private val onVideo: (ByteArray) -> Unit) : DialogField() {
         return inputEnvelope.contents is InputVideo
     }
 
-    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode) {
-        val video = envelope.contents as? InputVideo ?: return
-        getMessageSender().download(video.doc)
-            .onSuccess { bytes ->
+    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode): DialogInputState {
+        val video = envelope.contents as? InputVideo ?: return DialogInputState.INVALID
+        return getMessageSender().download(video.doc)
+            .map { bytes ->
                 onVideo(bytes)
                 // mark as processed; store optional marker
                 dialogData.put("video_${video.doc.docId}", true)
+                DialogInputState.VALID
             }
-            .onFailure {
-                // keep dialog as-is; validation already passed, but we won't crash
-            }
+            .mapError {
+                DialogInputState.INVALID
+            }.get() ?: DialogInputState.INVALID
     }
 }
 
@@ -220,9 +250,10 @@ class TextField(private val fieldName: String) : DialogField() {
         return inputEnvelope.contents is InputText
     }
 
-    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode) {
-        val text = (envelope.contents as? InputText)?.text ?: return
+    override fun processInput(envelope: InputEnvelope, dialogData: ObjectNode): DialogInputState {
+        val text = (envelope.contents as? InputText)?.text ?: return DialogInputState.INVALID
         dialogData.put(fieldName, text)
+        return DialogInputState.VALID
     }
 }
 
@@ -247,4 +278,10 @@ fun String.toBool() = Result.runCatching {
             throw IllegalArgumentException("Can't parse $it as boolean")
         }
     }
+}
+fun UserSessionStorage.getDialogData(id: String) = (this.load(id)?.asJson()?.get("_") as? ObjectNode) ?: emptyNode()
+fun UserSessionStorage.saveDialogData(id: String, data: ObjectNode) {
+    val node = this.load(id)?.asJson() ?: emptyNode()
+    node.put("_", data)
+    this.save(id, node.toString())
 }

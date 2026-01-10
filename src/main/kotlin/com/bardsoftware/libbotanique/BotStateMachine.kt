@@ -18,6 +18,8 @@ class State(val id: String, internal val stateMachine: BotStateMachine) {
   var isSubset: Boolean = false
   var isIgnored: Boolean = false
   var commands = emptySet<String>()
+  internal var hasDialog = false
+
 
   fun required(key: String, value: String) {
     requiredNode.put(key, value)
@@ -88,6 +90,7 @@ class State(val id: String, internal val stateMachine: BotStateMachine) {
       dlg.matches(it)
     }
     action(dlg::process)
+    hasDialog = true
   }
 
   override fun toString(): String {
@@ -106,6 +109,11 @@ class ButtonStateBuilder(var text: String = "", var markdown: String = "", var b
 fun identityOutput(input: InputEnvelope) = OutputData(input.stateJson)
 
 data class OutputButton(val targetState: String, val label: String, val payload: String? = null, val output: (InputEnvelope)->OutputData = ::identityOutput)
+
+fun OutputButton.callbackJson(envelope: InputEnvelope, sm: BotStateMachine): ObjectNode =
+  sm.getState(targetState)?.stateJson?.let {
+    it.deepCopy().apply { setContext(payload?.asJson() ?: output(envelope).contextJson) }
+  } ?: emptyNode()
 
 
 /**
@@ -202,10 +210,12 @@ class BotStateMachine(val sessionProvider: UserSessionProvider) {
   }
 
   fun handle(state: State, input: InputEnvelope, outputUi: OutputUi): Result<State, String> {
-    val landingContext = sessionProvider(input.user.id.toLong()).load(landingStateId)?.asJson() ?: jacksonObjectMapper().createObjectNode()
-    landingContext.setRedirectStateId(state.id)
-    sessionProvider(input.user.id.toLong()).save(landingStateId, landingContext.toString())
-
+    if (state.hasDialog) {
+      val landingContext = sessionProvider(input.user.id.toLong()).load(landingStateId)?.asJson()
+        ?: jacksonObjectMapper().createObjectNode()
+      landingContext.setRedirectStateId(state.id)
+      sessionProvider(input.user.id.toLong()).save(landingStateId, landingContext.toString())
+    }
     LOG.debug("Entered state {}", state)
     val stateAction = actions[state.id] ?: return Err("No action is registered for state ${state.id}")
     return stateAction(input).map {

@@ -42,14 +42,8 @@ class TelegramBotsMessageProcessor(private val stateMachine: BotStateMachine, pr
                     InlineKeyboardMarkup(
                             buttonBlock.buttons.map { botButton ->
                                 InlineKeyboardButton(botButton.label).also { btn ->
-                                    if (botButton.payload != null) {
-                                        btn.callbackData = botButton.payload
-                                        return@also
-                                    }
-                                    stateMachine.getState(botButton.targetState)?.let {state ->
-                                        btn.callbackData = json(state.stateJson) {
-                                            setContext(botButton.output(inputEnvelope).contextJson)
-                                        }
+                                    btn.callbackData = botButton.callbackJson(inputEnvelope, stateMachine).toString().also {
+                                        println("Button ${btn.text} callbackData=$it")
                                     }
                                 }
                             }.chunked(buttonBlock.columnCount)
@@ -133,8 +127,7 @@ class TelegramBotsMessageProcessor(private val stateMachine: BotStateMachine, pr
 
     private fun createCallbackInputEnvelope(update: Update): Result<InputEnvelope, String> =
         update.getCallbackJson()?.let {
-            val context = it.remove("_") as? ObjectNode ?: objectNode {}
-            Ok(InputEnvelope(it, context, update.getTgUser(), contents = InputTransition(it)))
+            Ok(createCallbackInput(it, update.getTgUser()))
         } ?: return Err("No callback data")
 
 }

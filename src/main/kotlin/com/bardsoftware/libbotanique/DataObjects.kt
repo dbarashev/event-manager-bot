@@ -13,6 +13,10 @@ data class TgUser(val displayName: String, val id: String, val username: String)
  */
 data class InputEnvelope(val stateJson: ObjectNode, val contextJson: ObjectNode, val user: TgUser, val command: String? = null, val contents: InputContents = InputVoid())
 
+fun createCallbackInput(callbackJson: ObjectNode, user: TgUser): InputEnvelope {
+    val context = callbackJson.remove("_") as? ObjectNode ?: objectNode {}
+    return InputEnvelope(callbackJson, context, user, contents = InputTransition(callbackJson))
+}
 /**
  * Data object that represents a document, including its ID, caption, and download function.
  */

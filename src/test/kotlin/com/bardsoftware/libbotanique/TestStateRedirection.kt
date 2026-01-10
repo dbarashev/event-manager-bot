@@ -18,6 +18,7 @@ class TestStateRedirection {
                 }
             }
             state("STATE_B", "B") {
+                dialog {  }
                 action {
                     SimpleAction("", landingStateId, it) {
                         handlerCallsStateB++

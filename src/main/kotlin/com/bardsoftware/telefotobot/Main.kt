@@ -25,6 +25,7 @@ fun main(args: Array<String>) {
                 apply(TextMessage("Озвучиваем?"), TextMessage("Готово!")) { json ->
                     println("Озвучиваем текст: ${json.get("f1").asText()}")
                 }
+                cancel(landingStateId)
             }
         }
         state("VIDEO_UPLOAD", "s2") {
